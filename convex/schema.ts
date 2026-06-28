@@ -71,6 +71,7 @@ const intentValidator = v.union(
   v.literal("replicate"), // drop a post/ad URL → improved replica
   v.literal("social"), // algorithm hacking: trends + viral posts + reel + calendar
   v.literal("onboarding"), // zero-to-one PLG: in-app onboarding flow / product tour
+  v.literal("scout"), // GitHub artifact intelligence: event/org/topic → dissect projects
 );
 
 export default defineSchema({
@@ -564,6 +565,46 @@ export default defineSchema({
       }),
     ),
     embedSnippet: v.string(), // paste-ready init code
+    generatedAt: v.number(),
+  }).index("by_run", ["runId"]),
+
+  // ==========================================================================
+  // GITHUB ARTIFACT INTELLIGENCE (scout) — point at an event/hackathon, a GitHub
+  // org, a topic, or a competitor and enumerate the REAL projects being built:
+  // discover repos (GitHub Search API, token-OPTIONAL), read each repo's README +
+  // contributors, and analyze them (OpenAI) into a per-project teardown. Honest +
+  // public-data only: every row carries confidence + provenance, and empty/
+  // placeholder repos are labeled (isEmpty) instead of hallucinated. Mirrors
+  // lib/contract.ts ScoutProject. Every absent-able field is OPTIONAL so a thin
+  // result still renders; nothing here can block a run or a brief render.
+  // ==========================================================================
+  projects: defineTable({
+    runId: v.id("runs"),
+    project: v.string(), // human project name
+    repoUrl: v.string(), // canonical https GitHub URL (clickable provenance)
+    repoFullName: v.string(), // "owner/repo"
+    description: v.optional(v.string()), // repo description (provenance)
+    whatTheyreBuilding: v.string(), // the teardown
+    stack: v.array(v.string()), // inferred tech stack
+    maturity: v.string(), // empty | placeholder | prototype | mvp | production
+    pros: v.array(v.string()),
+    cons: v.array(v.string()),
+    gtmAngle: v.optional(v.string()),
+    confidence: v.number(), // 0-1 — honest analysis confidence
+    team: v.array(
+      v.object({
+        login: v.string(),
+        contributions: v.number(),
+        url: v.optional(v.string()),
+      }),
+    ),
+    stars: v.optional(v.number()),
+    language: v.optional(v.string()),
+    createdAtGh: v.optional(v.string()), // ISO repo created_at
+    updatedAtGh: v.optional(v.string()), // ISO repo pushed_at
+    isEmpty: v.boolean(), // labeled empty/placeholder (graceful, never hallucinated)
+    matchedOn: v.string(), // provenance: "repo text match" | "org membership" | "topic tag"
+    source: v.string(), // github_search | github_org | github_topic
     generatedAt: v.number(),
   }).index("by_run", ["runId"]),
 

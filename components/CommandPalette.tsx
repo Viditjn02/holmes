@@ -69,6 +69,7 @@ const CAPABILITY_COMMANDS: { intent: Capability; label: string; shortcut?: strin
   { intent: "social", label: "Make it go viral", shortcut: ["⌘", "5"] },
   { intent: "replicate", label: "Replicate & improve a post or ad" },
   { intent: "onboarding", label: "Generate an onboarding flow" },
+  { intent: "scout", label: "Scout GitHub — dissect the projects" },
   { intent: "outreach", label: "Send approved outreach" },
   { intent: "analyze", label: "Run a full sweep on a company" },
 ];

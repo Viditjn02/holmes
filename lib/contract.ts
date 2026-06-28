@@ -30,6 +30,7 @@ export type Intent =
   | "replicate" // drop a post/ad URL → improved replica (copy + image + variations)
   | "social" // algorithm hacking: trend scan + viral posts + reel + calendar
   | "onboarding" // zero-to-one PLG: generate an in-app onboarding flow/tour
+  | "scout" // GitHub artifact intelligence: event/org/topic → dissect the projects
   | "brain" // gbrain recall — answered inline, no run
   | "chat"; // pure conversation — answered inline, no run
 
@@ -43,6 +44,7 @@ export const INTENTS: readonly Intent[] = [
   "replicate",
   "social",
   "onboarding",
+  "scout",
   "brain",
   "chat",
 ] as const;
@@ -59,6 +61,7 @@ export const CAPABILITIES: readonly Capability[] = [
   "replicate",
   "social",
   "onboarding",
+  "scout",
 ] as const;
 
 export function spawnsRun(intent: Intent): intent is Capability {
@@ -93,7 +96,9 @@ export type AgentId =
   // --- Track 2: SALES CYBORGS depth (prospect digital twin) ---
   | "twin" // simulates + scores each drafted email before send
   // --- Track 3: ZERO-TO-ONE PLG (onboarding flow generator) ---
-  | "guide"; // generates an in-app onboarding flow / product tour
+  | "guide" // generates an in-app onboarding flow / product tour
+  // --- GitHub artifact intelligence (scout) ---
+  | "scout"; // event/org/topic → discover + dissect the real GitHub projects
 
 export interface AgentSpec {
   id: AgentId;
@@ -126,6 +131,8 @@ export const AGENT_REGISTRY: Readonly<Record<AgentId, AgentSpec>> = {
   twin: { id: "twin", label: "Digital Twin", capability: "outbound", board: true, blurb: "Simulates + scores each draft." },
   // Track 3 — zero-to-one PLG (onboarding).
   guide: { id: "guide", label: "Onboarding Guide", capability: "onboarding", board: true, blurb: "Generates a product tour." },
+  // GitHub artifact intelligence (scout).
+  scout: { id: "scout", label: "Scout", capability: "scout", board: true, blurb: "Dissecting the projects on GitHub." },
 };
 
 // Ordered list of every agent id (iteration / typing). NOT the per-run roster —
@@ -150,6 +157,7 @@ export const AGENTS: readonly AgentId[] = [
   "calendar",
   "twin",
   "guide",
+  "scout",
 ] as const;
 export type AgentName = AgentId;
 
@@ -183,6 +191,9 @@ export const CAPABILITY_PLANS: Readonly<Record<Capability, readonly Phase[]>> = 
   social: [["router"], ["enrich"], ["trendscout"], ["composer", "reelmaker"], ["calendar"]],
   // Zero-to-one PLG: enrich the product context → generate the onboarding flow.
   onboarding: [["router"], ["enrich"], ["guide"]],
+  // GitHub artifact intelligence: scout self-contains discover → enumerate → analyze.
+  // It needs no company enrich (the seed IS an event/org/topic), so it runs solo.
+  scout: [["scout"]],
 };
 
 /** The board-tile agents for a capability (queued rows + board layout). */
@@ -293,6 +304,32 @@ export const ROUTER_INTENTS: readonly RouterIntentSpec[] = [
       "design a first-run experience",
     ],
     keywords: ["onboarding", "product tour", "walkthrough", "first run", "activation", "plg", "shepherd", "tooltip tour", "getting started"],
+  },
+  {
+    intent: "scout",
+    title: "GitHub artifact intelligence (scout)",
+    description:
+      "Point at an event/hackathon, a GitHub org, a topic, or a competitor and enumerate the REAL projects being built there: discover repos via the GitHub Search API, read each repo's README + manifests, and produce a per-project teardown (what they're building, stack, maturity, pros/cons, GTM angle) with confidence + provenance. Public-data only.",
+    examples: [
+      "what is everyone building at the AI Growth Hackathon",
+      "scout projects for the orange slice hackathon",
+      "analyze the repos in github org vercel",
+      "dissect the projects tagged llm-agents",
+    ],
+    keywords: [
+      "what is everyone building",
+      "what's everyone building",
+      "scout projects",
+      "scout the",
+      "hackathon",
+      "github org",
+      "github topic",
+      "analyze the repos",
+      "dissect the repos",
+      "what are people building",
+      "projects being built",
+      "repos for",
+    ],
   },
   {
     intent: "brain",
@@ -664,3 +701,59 @@ export const MAX_SCAN_ADS = 12; // gallery cap
 export const AD_VARIATIONS = 3; // copy variations per generated ad
 export const SCAN_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h scan cache
 export const SCALING_MIN_DAYS = 21; // active + ≥21d running ⇒ scalingSignal
+
+// ----------------------------------------------------------------------------
+// GITHUB ARTIFACT INTELLIGENCE (scout) — point at an event/org/topic/competitor,
+// the scout DISCOVERS the real repos (GitHub Search API), ENUMERATES each
+// (repo + contributors + README), and ANALYZES them (OpenAI chatJSON) into a
+// per-project teardown. Public-data only; graceful (no token/key → empty, never
+// throws). These are the typed in-memory hand-offs; the agent persists `projects`.
+// ----------------------------------------------------------------------------
+
+/** How the scout interpreted the seed → which GitHub query lane it ran. */
+export type ScoutMode = "search" | "org" | "topic";
+
+/** Project maturity, inferred from README depth + repo activity. "empty" and
+ *  "placeholder" are HONESTLY labeled (a repo pushed only to satisfy a rule). */
+export type ProjectMaturity =
+  | "empty" // no README/code yet — placeholder push
+  | "placeholder" // description only, near-empty
+  | "prototype" // some README/code, early
+  | "mvp" // working build with real README
+  | "production"; // mature, documented, active
+
+/** One builder on a repo (from the contributors API — public handles only). */
+export interface ScoutTeamMember {
+  login: string;
+  contributions: number;
+  url?: string;
+}
+
+/** The analyzed project card (scout → `projects` table). Most analysis fields are
+ *  required (the analyzer always emits them, with safe fallbacks for empty repos). */
+export interface ScoutProject {
+  project: string; // human project name (README/repo name)
+  repoUrl: string; // canonical https GitHub URL
+  repoFullName: string; // "owner/repo"
+  description?: string; // repo description (provenance)
+  whatTheyreBuilding: string; // the teardown one-liner+
+  stack: string[]; // inferred tech stack
+  maturity: ProjectMaturity;
+  pros: string[];
+  cons: string[];
+  gtmAngle?: string; // the GTM read
+  confidence: number; // 0-1 — honest analysis confidence
+  team: ScoutTeamMember[];
+  stars?: number;
+  language?: string;
+  createdAtGh?: string; // ISO repo created_at
+  updatedAtGh?: string; // ISO repo pushed_at/updated_at
+  isEmpty: boolean; // labeled empty/placeholder (graceful)
+  matchedOn: string; // provenance: "repo text match" | "org membership" | "topic tag"
+  source: string; // "github_search" | "github_org" | "github_topic"
+}
+
+// Scout tuning knobs.
+export const SCOUT_MAX_CANDIDATES = 18; // raw search results to consider
+export const SCOUT_MAX_REPOS = 8; // repos we fully enumerate + analyze (rate-limit safe)
+export const SCOUT_README_MAX_CHARS = 6000; // README slice fed to the analyzer

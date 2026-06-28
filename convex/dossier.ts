@@ -92,6 +92,25 @@ export interface DossierFact {
   url: string | null;
 }
 
+/** A scouted GitHub project (artifact intelligence). Honest: carries confidence
+ *  + provenance, and empty repos are labeled rather than hallucinated. */
+export interface DossierProject {
+  project: string;
+  repoUrl: string;
+  repoFullName: string;
+  whatTheyreBuilding: string;
+  stack: string[];
+  maturity: string;
+  pros: string[];
+  cons: string[];
+  gtmAngle: string | null;
+  confidence: number;
+  team: string[];
+  stars: number | null;
+  isEmpty: boolean;
+  matchedOn: string;
+}
+
 export interface RecommendedPlay {
   summary: string;
   steps: string[];
@@ -113,6 +132,7 @@ export interface Dossier {
     brainPages: number;
     brainFacts: number;
     brainRuns: number;
+    projects: number;
   };
   topThreads: DossierThread[];
   competitors: DossierCompetitor[];
@@ -121,6 +141,7 @@ export interface Dossier {
   learnedFacts: DossierFact[];
   recommendedPlay: RecommendedPlay;
   draftedOutreach: DossierOutreach | null;
+  projects: DossierProject[];
 }
 
 // ---------------------------------------------------------------------------
@@ -384,6 +405,38 @@ async function buildDossier(ctx: QueryCtx, run: Doc<"runs">): Promise<Dossier> {
     brainRuns += p.runCount;
   }
 
+  // scouted GitHub projects (artifact intelligence) — populated + high-confidence
+  // first, mirroring projects.listByRun. Empty repos are labeled, not hidden.
+  const projectDocs = await ctx.db
+    .query("projects")
+    .withIndex("by_run", (q) => q.eq("runId", runId))
+    .collect();
+  const projects: DossierProject[] = [...projectDocs]
+    .sort((a, b) => {
+      const emptyA = a.isEmpty ? 1 : 0;
+      const emptyB = b.isEmpty ? 1 : 0;
+      if (emptyA !== emptyB) return emptyA - emptyB;
+      if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+      return (b.stars ?? 0) - (a.stars ?? 0);
+    })
+    .slice(0, 12)
+    .map((p) => ({
+      project: p.project,
+      repoUrl: p.repoUrl,
+      repoFullName: p.repoFullName,
+      whatTheyreBuilding: p.whatTheyreBuilding,
+      stack: p.stack ?? [],
+      maturity: p.maturity,
+      pros: p.pros ?? [],
+      cons: p.cons ?? [],
+      gtmAngle: p.gtmAngle ?? null,
+      confidence: p.confidence,
+      team: (p.team ?? []).map((m) => m.login),
+      stars: p.stars ?? null,
+      isEmpty: p.isEmpty === true,
+      matchedOn: p.matchedOn,
+    }));
+
   const company = (run.company ?? run.input ?? "this company").trim();
   const positioning = brief?.positioning ?? "";
 
@@ -412,6 +465,7 @@ async function buildDossier(ctx: QueryCtx, run: Doc<"runs">): Promise<Dossier> {
       brainPages: allPages.length,
       brainFacts,
       brainRuns,
+      projects: projectDocs.length,
     },
     topThreads,
     competitors,
@@ -420,6 +474,7 @@ async function buildDossier(ctx: QueryCtx, run: Doc<"runs">): Promise<Dossier> {
     learnedFacts,
     recommendedPlay,
     draftedOutreach,
+    projects,
   };
 }
 

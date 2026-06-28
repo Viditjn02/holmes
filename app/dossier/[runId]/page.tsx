@@ -10,6 +10,7 @@ import type {
   DossierAd,
   DossierCompetitor,
   DossierDecisionMaker,
+  DossierProject,
   DossierThread,
 } from "@/convex/dossier";
 import { cn } from "@/lib/utils";
@@ -113,6 +114,9 @@ export default function DossierPage() {
           {dossier.topThreads.length > 0 && <ThreadsPanel threads={dossier.topThreads} />}
           {dossier.competitors.length > 0 && (
             <CompetitorsPanel competitors={dossier.competitors} />
+          )}
+          {dossier.projects.length > 0 && (
+            <ProjectsPanel projects={dossier.projects} />
           )}
           {dossier.decisionMakers.length > 0 && (
             <DecisionMakersPanel makers={dossier.decisionMakers} />
@@ -481,6 +485,104 @@ function CompetitorCard({ competitor }: { competitor: DossierCompetitor }) {
         className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-pill border border-hairline bg-canvas px-3 py-1.5 text-body-sm font-fig-link text-ink transition-colors hover:bg-surface-soft"
       >
         View live ad
+        <ArrowUpRight />
+      </a>
+    </article>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// Projects poster (mint) — what everyone's building (GitHub artifact intel).
+// ----------------------------------------------------------------------------
+function ProjectsPanel({ projects }: { projects: DossierProject[] }) {
+  return (
+    <Panel
+      color="bg-block-mint"
+      eyebrow="GitHub artifact intelligence"
+      title="What everyone's building."
+      intro="Real, self-published repos — discovered, enumerated, and dissected from public data only. Each carries an honest confidence + how it was matched."
+    >
+      <div className="grid gap-3 sm:grid-cols-2">
+        {projects.slice(0, 8).map((p) => (
+          <ProjectCard key={p.repoFullName} project={p} />
+        ))}
+      </div>
+    </Panel>
+  );
+}
+
+function projectMaturityChip(m: string): { label: string; cls: string } {
+  const map: Record<string, { label: string; cls: string }> = {
+    empty: { label: "Empty repo", cls: "bg-surface-soft text-ink/70" },
+    placeholder: { label: "Placeholder", cls: "bg-surface-soft text-ink/70" },
+    prototype: { label: "Prototype", cls: "bg-block-cream text-ink" },
+    mvp: { label: "MVP", cls: "bg-block-lime text-ink" },
+    production: { label: "Production", cls: "bg-block-mint text-ink" },
+  };
+  return map[m] ?? { label: m || "Unknown", cls: "bg-surface-soft text-ink/70" };
+}
+
+function ProjectCard({ project: p }: { project: DossierProject }) {
+  const mat = projectMaturityChip(p.maturity);
+  return (
+    <article
+      className={cn(
+        "flex flex-col gap-3 rounded-lg border bg-canvas p-4",
+        p.isEmpty ? "border-dashed border-hairline" : "border-hairline",
+      )}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <p className="truncate text-body-sm font-fig-headline text-ink">{p.project}</p>
+          <p className="truncate font-fig-mono text-[11px] text-ink/45">{p.repoFullName}</p>
+        </div>
+        <span className={cn("caption whitespace-nowrap rounded-pill px-2 py-0.5", mat.cls)}>
+          {mat.label}
+        </span>
+      </div>
+
+      <p className="line-clamp-4 text-body-sm leading-snug text-ink/80">
+        {p.whatTheyreBuilding}
+      </p>
+
+      {p.stack.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {p.stack.slice(0, 6).map((s) => (
+            <span key={s} className="caption rounded-pill border border-hairline bg-canvas px-2 py-0.5 text-ink/75">
+              {s}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {p.gtmAngle && (
+        <p className="rounded-md bg-block-lime px-2.5 py-1.5 text-body-sm leading-snug text-[#17162b]">
+          <span className="eyebrow mr-1 text-[11px]">GTM angle</span>
+          {p.gtmAngle}
+        </p>
+      )}
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="caption rounded-pill bg-surface-soft px-2 py-0.5 text-ink/65">
+          {(p.confidence * 100).toFixed(0)}% confidence
+        </span>
+        <span className="caption rounded-pill bg-surface-soft px-2 py-0.5 text-ink/55">
+          Matched on {p.matchedOn}
+        </span>
+        {typeof p.stars === "number" && p.stars > 0 && (
+          <span className="caption rounded-pill bg-surface-soft px-2 py-0.5 text-ink/55">
+            ★ {p.stars}
+          </span>
+        )}
+      </div>
+
+      <a
+        href={p.repoUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-1 inline-flex w-fit items-center gap-1.5 rounded-pill border border-hairline bg-canvas px-3 py-1.5 text-body-sm font-fig-link text-ink transition-colors hover:bg-surface-soft"
+      >
+        View repo
         <ArrowUpRight />
       </a>
     </article>

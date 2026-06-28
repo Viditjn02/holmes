@@ -206,6 +206,14 @@ const AGENT_META: Record<AgentId, { tagline: string; icon: ReactElement }> = {
       </>,
     ),
   },
+  scout: {
+    tagline: "Dissecting the projects on GitHub",
+    icon: icon(
+      <>
+        <path d="M9 19c-4 1.5-4-2.5-6-3m12 5v-3.5c0-1 .1-1.4-.5-2 2.8-.3 5.5-1.4 5.5-6a4.6 4.6 0 0 0-1.3-3.2 4.3 4.3 0 0 0-.1-3.2s-1-.3-3.5 1.3a12 12 0 0 0-6 0C6.6 3 5.6 3.3 5.6 3.3a4.3 4.3 0 0 0-.1 3.2A4.6 4.6 0 0 0 4.2 9.7c0 4.6 2.7 5.7 5.5 6-.6.6-.6 1.2-.5 2V21" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </>,
+    ),
+  },
 };
 
 // ----------------------------------------------------------------------------
@@ -234,6 +242,7 @@ const RUNNING_LABEL: Record<AgentId, string> = {
   calendar: "Laying out the content calendar…",
   twin: "Simulating the buyer's reply before send…",
   guide: "Generating the in-app onboarding flow…",
+  scout: "Scouting GitHub + dissecting each repo…",
 };
 
 function runningLabel(agent: AgentId, company?: string): string {

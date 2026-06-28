@@ -44,6 +44,7 @@ const intentValidator = v.union(
   v.literal("replicate"),
   v.literal("social"),
   v.literal("onboarding"),
+  v.literal("scout"),
 );
 
 const triggerValidator = v.union(

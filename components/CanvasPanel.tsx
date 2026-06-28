@@ -34,6 +34,7 @@ import LiveMetrics from "./LiveMetrics";
 import ContentCalendar from "./ContentCalendar";
 import PitchLab from "./PitchLab";
 import OnboardingCanvas from "./OnboardingCanvas";
+import ProjectGallery from "./ProjectGallery";
 import {
   campaignForRunRef,
   getMessagesRef,
@@ -90,6 +91,7 @@ const MODE_META: Record<Capability, { label: string; board: string; dot: string 
   replicate: { label: "Replicate", board: "Studio", dot: "bg-block-cream" },
   social: { label: "Social", board: "Calendar", dot: "bg-block-navy" },
   onboarding: { label: "Onboarding", board: "Tour", dot: "bg-block-lilac" },
+  scout: { label: "Scout", board: "Projects", dot: "bg-block-mint" },
 };
 
 function modeMeta(intent: Capability) {
@@ -696,6 +698,8 @@ function CanvasForRun({
           {intent === "social" && <ContentCalendar runId={run.runId} />}
 
           {intent === "onboarding" && <OnboardingCanvas runId={run.runId} />}
+
+          {intent === "scout" && <ProjectGallery runId={run.runId} />}
 
           {/* compounding brain — only renders when it knows something */}
           {company && <BrainPanel company={company} />}

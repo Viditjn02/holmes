@@ -182,6 +182,7 @@ function deriveInputType(
  */
 const FALLBACK_PRIORITY: readonly Intent[] = [
   "outreach",
+  "scout",
   "competitor",
   "outbound",
   "content",
@@ -314,6 +315,7 @@ const CAPABILITY_LABEL: Record<Capability, string> = {
   replicate: "replicating that ad and improving it",
   social: "scanning trends and spinning up viral posts",
   onboarding: "designing an in-app onboarding flow",
+  scout: "scouting GitHub for the projects and dissecting each repo",
 };
 
 function ackPrompt(decision: RouterDecision): { system: string; user: string } {
@@ -354,6 +356,7 @@ const EXTRA_LABEL: Record<Capability, string> = {
   replicate: "replica",
   social: "viral posts",
   onboarding: "onboarding flow",
+  scout: "github projects",
 };
 
 /** A compound ask joins capabilities with a conjunction — only then do we fan out. */
@@ -419,6 +422,15 @@ function detectCapabilities(userText: string): Set<Capability> {
   // PLG → ONBOARDING.
   if (has(/\bonboarding\b|\bproduct tour\b|\bwalkthrough\b|\bfirst[- ]run\b/)) {
     caps.add("onboarding");
+  }
+
+  // GitHub artifact intelligence → SCOUT.
+  if (
+    has(/\bhackathon\b|\bgithub org\b|\bgithub topic\b/) ||
+    has(/\b(scout|dissect|analyze|enumerate) (the )?(repos?|projects?)\b/) ||
+    has(/\b(what|who)('?s| is| are)? (everyone|people) building\b/)
+  ) {
+    caps.add("scout");
   }
 
   return caps;

@@ -66,11 +66,18 @@ const RECENT_WINDOW_MS = 2 * 60_000; // "this run" pulse window
 
 // react-force-graph-2d's default export, resolved at runtime (client-only).
 type ForceGraphComponent = typeof import("react-force-graph-2d")["default"];
+// A d3-force-ish handle: chainable .strength()/.distance() setters. We only ever
+// call the setters (to widen the layout) — never read forces back.
+type ForceLike = {
+  strength?: (s: number | ((node: GraphNode) => number)) => ForceLike;
+  distance?: (d: number | ((link: GraphLink) => number)) => ForceLike;
+};
 // The imperative handle the component hands back via ref.
 type ForceGraphHandle = {
   zoomToFit: (durationMs?: number, padding?: number) => unknown;
   centerAt: (x?: number, y?: number, durationMs?: number) => unknown;
   d3ReheatSimulation: () => unknown;
+  d3Force: (name: string) => ForceLike | undefined;
 };
 
 // ----------------------------------------------------------------------------
@@ -121,6 +128,19 @@ const ENTITY_ORDER: readonly KnowledgeEntityType[] = [
   "campaign",
 ];
 const MAGENTA = "#ff3d8b"; // --accent-magenta, constant across themes
+
+// --- layout tuning ----------------------------------------------------------
+// Small ink dots in lots of breathing room. Nodes are tiny (so labels aren't
+// swallowed) and forces are tuned to blow the same-run triangles apart while the
+// cross-entity links still pull separate clusters into one constellation.
+const NODE_BASE_RADIUS = 5; // a small dot at zero facts
+const NODE_RADIUS_SCALE = 1.1; // gentle √factCount growth
+const NODE_MAX_RADIUS = 12; // hard cap — never a black blob
+const CHARGE_STRENGTH = -320; // strong repulsion: spread the triangles out
+const LINK_DISTANCE = 100; // long springs: real space between connected pages
+const LINK_STRENGTH = 0.22; // soft springs so repulsion can do its work
+const TOP_LABEL_COUNT = 3; // also label the biggest few pages at rest
+const CROSS_LINK_WEIGHT = 2; // company↔competitor / company↔segment edge weight
 
 interface BrainCanvasProps {
   /** Optional entity key to spotlight (e.g. the active run's company). */
@@ -221,9 +241,25 @@ function GraphStage({
   const selectedRef = useRef(selectedId);
   const highlightRef = useRef(highlightId);
   const reducedRef = useRef(reducedMotion);
+  const hoveredRef = useRef<string | null>(null);
   selectedRef.current = selectedId;
   highlightRef.current = highlightId;
   reducedRef.current = reducedMotion;
+
+  // The biggest few pages keep a label even at rest — everything else only
+  // labels on focus/hover, so labels never crowd the constellation.
+  const topIds = useMemo(
+    () =>
+      new Set(
+        [...graph.nodes]
+          .sort((a, b) => b.factCount - a.factCount)
+          .slice(0, TOP_LABEL_COUNT)
+          .map((n) => n.id),
+      ),
+    [graph],
+  );
+  const topRef = useRef(topIds);
+  topRef.current = topIds;
 
   // Dynamic-import the canvas component (avoids SSR `window`/`canvas` access).
   useEffect(() => {
@@ -296,14 +332,19 @@ function GraphStage({
       ctx.strokeStyle = focused ? rgba(MAGENTA, 0.9) : RING[node.entityType];
       ctx.stroke();
 
-      // label once we're zoomed in (or always for the focused node)
-      if (scale > 1.3 || focused) {
-        const fontSize = Math.min(13, 11 / scale + 4);
+      // labels are intentionally sparse: only the focused/hovered node and the
+      // largest few — so tiny dots stay legible instead of a wall of text.
+      const labelled =
+        focused ||
+        node.id === hoveredRef.current ||
+        topRef.current.has(node.id);
+      if (labelled) {
+        const fontSize = Math.min(9, 7 / scale + 2.5);
         ctx.font = `500 ${fontSize}px ui-sans-serif, system-ui, sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
-        ctx.fillStyle = palette.ink;
-        ctx.fillText(truncate(node.title, 22), x, y + r + 3 / scale);
+        ctx.fillStyle = focused ? MAGENTA : palette.ink;
+        ctx.fillText(truncate(node.title, 18), x, y + r + 2.5 / scale);
       }
     },
     [palette.ink],
@@ -328,6 +369,11 @@ function GraphStage({
     [onSelect],
   );
 
+  // Hover only flips which node shows a label; the lib redraws on hover change.
+  const handleNodeHover = useCallback((node: GraphNode | null) => {
+    hoveredRef.current = node?.id ?? null;
+  }, []);
+
   // Keep the canvas redrawing continuously ONLY while something should pulse
   // (a selected / highlighted / just-ingested node) and motion is allowed —
   // otherwise let the renderer pause when idle to spare the CPU.
@@ -338,6 +384,20 @@ function GraphStage({
       graph.nodes.some((n) => n.fresh));
 
   const ready = ForceGraph && size.w > 0 && size.h > 0;
+
+  // Widen the layout once the graph/component is live: stronger charge repulsion
+  // and longer, softer link springs turn tight overlapping triangles into a
+  // breathing market-map constellation. Re-applied whenever the graph changes.
+  useEffect(() => {
+    if (!ready) return;
+    const fg = fgRef.current;
+    if (!fg) return;
+    fg.d3Force("charge")?.strength?.(CHARGE_STRENGTH);
+    const link = fg.d3Force("link");
+    link?.distance?.(LINK_DISTANCE);
+    link?.strength?.(LINK_STRENGTH);
+    fg.d3ReheatSimulation();
+  }, [ready, graph]);
 
   return (
     <div ref={containerRef} className="absolute inset-0 bg-surface-soft/30">
@@ -358,6 +418,7 @@ function GraphStage({
             0.4 + Math.min(1.6, (l.weight - 1) * 0.5)) as never}
           linkDirectionalParticles={0}
           onNodeClick={handleNodeClick as never}
+          onNodeHover={handleNodeHover as never}
           onBackgroundClick={(() => onSelect(null)) as never}
           enableNodeDrag
           cooldownTicks={reducedMotion ? 0 : undefined}
@@ -723,7 +784,10 @@ function buildGraph(pages: readonly KnowledgePageDoc[]): GraphData {
       factCount,
       runCount: p.runCount ?? p.sources?.length ?? 0,
       fresh: t - updatedAt < RECENT_WINDOW_MS,
-      radius: 3 + 2.4 * Math.sqrt(factCount),
+      radius: Math.min(
+        NODE_MAX_RADIUS,
+        NODE_BASE_RADIUS + NODE_RADIUS_SCALE * Math.sqrt(factCount),
+      ),
     };
   });
 
@@ -738,11 +802,26 @@ function buildGraph(pages: readonly KnowledgePageDoc[]): GraphData {
     set.add(id);
     buckets.set(key, set);
   };
+  // Per-page run set — used to infer which company a competitor/segment belongs
+  // to (the run that discovered it also touched its company page).
+  const runsByPage = new Map<string, Set<string>>();
+  const addRun = (id: string, run: string) => {
+    if (!run) return;
+    const set = runsByPage.get(id) ?? new Set<string>();
+    set.add(run);
+    runsByPage.set(id, set);
+  };
   for (const p of pages) {
     if (!idSet.has(p._id)) continue;
-    for (const s of p.sources ?? []) add(`run:${String(s.runId)}`, p._id);
+    for (const s of p.sources ?? []) {
+      add(`run:${String(s.runId)}`, p._id);
+      addRun(p._id, String(s.runId));
+    }
     for (const f of p.facts ?? []) {
-      if (f.runId) add(`run:${String(f.runId)}`, p._id);
+      if (f.runId) {
+        add(`run:${String(f.runId)}`, p._id);
+        addRun(p._id, String(f.runId));
+      }
       if (f.url) add(`url:${f.url}`, p._id);
     }
   }
@@ -762,6 +841,19 @@ function buildGraph(pages: readonly KnowledgePageDoc[]): GraphData {
     }
   }
 
+  // Cross-entity stitching: pull every competitor / buyer-segment page toward
+  // the company it belongs to, so the per-run triangles fuse into ONE market
+  // map instead of drifting apart as disconnected clusters. Folded into the same
+  // weight map so a pair already linked by a shared run just gets reinforced.
+  const bump = (a: string, b: string, w: number) => {
+    if (a === b || !idSet.has(a) || !idSet.has(b)) return;
+    const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+    weights.set(key, (weights.get(key) ?? 0) + w);
+  };
+  for (const edge of crossEntityLinks(pages, runsByPage)) {
+    bump(String(edge.source), String(edge.target), edge.weight);
+  }
+
   const links: GraphLink[] = [];
   for (const [key, weight] of weights) {
     const [source, target] = key.split("|");
@@ -769,6 +861,49 @@ function buildGraph(pages: readonly KnowledgePageDoc[]): GraphData {
   }
 
   return { nodes, links };
+}
+
+/**
+ * Derive company-membership edges. A page carries no explicit FK to its company,
+ * so we infer it: a competitor/segment belongs to the company whose runs overlap
+ * its own the most (the discovery run touched both). When there's a single
+ * company page — the common "one company + its market" brain — everything hangs
+ * off it; with no run overlap we fall back to that sole/first company so no
+ * cluster is left stranded.
+ */
+function crossEntityLinks(
+  pages: readonly KnowledgePageDoc[],
+  runsByPage: Map<string, Set<string>>,
+): GraphLink[] {
+  const companies = pages.filter((p) => p.entityType === "company");
+  if (companies.length === 0) return [];
+  const sole = companies.length === 1 ? companies[0] : null;
+
+  const links: GraphLink[] = [];
+  for (const p of pages) {
+    if (p.entityType !== "competitor" && p.entityType !== "icp") continue;
+
+    let best = sole;
+    if (!best) {
+      const runs = runsByPage.get(p._id);
+      let bestOverlap = 0;
+      for (const c of companies) {
+        const cRuns = runsByPage.get(c._id);
+        let overlap = 0;
+        if (runs && cRuns) for (const r of runs) if (cRuns.has(r)) overlap += 1;
+        if (overlap > bestOverlap) {
+          bestOverlap = overlap;
+          best = c;
+        }
+      }
+      if (!best) best = companies[0];
+    }
+
+    if (best && best._id !== p._id) {
+      links.push({ source: p._id, target: best._id, weight: CROSS_LINK_WEIGHT });
+    }
+  }
+  return links;
 }
 
 function deriveStats(
