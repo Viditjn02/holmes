@@ -5,6 +5,13 @@
 // A tiny, self-contained local HTTP service that turns a {script/topic, scenes}
 // request into a finished vertical (or square/landscape) MP4 — for $0:
 //
+//   0. KEN-BURNS FAST PATH (seconds, not minutes) — when the request carries a
+//                       poster image (posterUrl / imageUrl / poster / scene.image,
+//                       incl. data: URIs), SKIP Pexels and animate that ONE image
+//                       with a slow ffmpeg zoompan pan/zoom, hardware-encoded via
+//                       Apple-Silicon h264_videotoolbox. Narration/concat/mux below
+//                       are unchanged. Falls back to the Pexels path (1.) when no
+//                       image is supplied or the fetch fails.
 //   1. STOCK FOOTAGE  — Pexels video search (free PEXELS_API_KEY), one clip per
 //                       scene, scaled+cropped to the target frame.
 //   2. NARRATION      — FREE Microsoft Edge-TTS (msedge-tts npm, NO key, no cost)
@@ -54,6 +61,20 @@ const FALLBACK_SCENE_SECONDS = 2.6;
 const MAX_B64_BYTES = 24 * 1024 * 1024; // don't inline videos larger than ~24MB
 const FPS = 30;
 const BG_COLOR = "0x0B1220"; // deep slate, matches the canvas
+const VIDEO_BITRATE = process.env.VIDEO_WORKER_BITRATE || "6M"; // sane bitrate → fast HW encode
+
+// Ken-Burns fast path: a few slow pan/zoom presets, cycled per scene. Using the
+// output-frame index `on` (not accumulated `zoom`) keeps the motion perfectly
+// linear and jitter-free. Pans use a constant ("hold") zoom so the crop window
+// always stays in-bounds while it travels.
+const KEN_BURNS_AMP = 0.16; // zoom travel (1.00 → 1.16)
+const KEN_BURNS_HOLD = 1.14; // constant zoom used while panning
+const KEN_BURNS_PRESETS = [
+  { zoom: "in", pan: "center" }, // slow zoom in, centered
+  { zoom: "hold", pan: "ltr" }, // pan left → right
+  { zoom: "out", pan: "center" }, // slow zoom out, centered
+  { zoom: "hold", pan: "ttb" }, // pan top → bottom
+];
 
 const ASPECTS = {
   "9:16": { w: 1080, h: 1920, orientation: "portrait" },
@@ -110,6 +131,38 @@ async function drawtextAvailable() {
   }
   if (!DRAWTEXT_OK) log("ffmpeg has no drawtext filter — captions disabled (install ffmpeg with libfreetype to enable)");
   return DRAWTEXT_OK;
+}
+
+// Apple-Silicon hardware H.264 encode (h264_videotoolbox) renders many times
+// faster than libx264. Detect it once; gracefully fall back to libx264 when the
+// ffmpeg build lacks VideoToolbox (e.g. on non-Apple hardware). Never throws.
+let VIDEOTOOLBOX_OK = null;
+async function videotoolboxAvailable() {
+  if (VIDEOTOOLBOX_OK !== null) return VIDEOTOOLBOX_OK;
+  try {
+    const { stdout } = await execFileP("ffmpeg", ["-hide_banner", "-encoders"], {
+      maxBuffer: 1024 * 1024 * 8,
+    });
+    VIDEOTOOLBOX_OK = /h264_videotoolbox/.test(stdout);
+  } catch {
+    VIDEOTOOLBOX_OK = false;
+  }
+  log(
+    VIDEOTOOLBOX_OK
+      ? "h264_videotoolbox available — using Apple-Silicon hardware encode"
+      : "h264_videotoolbox unavailable — using libx264 -preset veryfast",
+  );
+  return VIDEOTOOLBOX_OK;
+}
+
+// Encoder args shared by every segment in a render so concat can stream-copy.
+// Hardware path is bitrate-based; `-allow_sw 1` lets VideoToolbox fall back to
+// software inside ffmpeg if a HW session can't be created (still never throws).
+async function videoEncoderArgs() {
+  if (await videotoolboxAvailable()) {
+    return ["-c:v", "h264_videotoolbox", "-b:v", VIDEO_BITRATE, "-allow_sw", "1", "-pix_fmt", "yuv420p"];
+  }
+  return ["-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-pix_fmt", "yuv420p"];
 }
 
 let FONT_FILE = null;
@@ -272,6 +325,49 @@ async function download(url, dest) {
 }
 
 // ----------------------------------------------------------------------------
+// KEN-BURNS FAST PATH — animate ONE already-generated ad image instead of
+// downloading 4 Pexels clips. Resolve a poster from any of the accepted fields.
+// ----------------------------------------------------------------------------
+function resolvePosterSource(body) {
+  const direct = body.posterUrl || body.imageUrl || body.poster || body.image;
+  if (typeof direct === "string" && direct.trim()) return direct.trim();
+  if (Array.isArray(body.scenes)) {
+    for (const s of body.scenes) {
+      if (s && typeof s === "object" && typeof s.image === "string" && s.image.trim()) {
+        return s.image.trim();
+      }
+    }
+  }
+  return null;
+}
+
+// Fetch the poster ONCE to a temp file. Supports http(s) URLs, Convex storage
+// URLs (plain https), and `data:` URIs (decoded to a temp image). Throws only
+// on a genuinely unusable source — the caller falls back to Pexels on throw.
+async function fetchPosterToFile(src, dir) {
+  if (src.startsWith("data:")) {
+    const m = /^data:([^;,]*)?(;base64)?,(.*)$/s.exec(src);
+    if (!m) throw new Error("bad data uri");
+    const mime = (m[1] || "").toLowerCase();
+    const isB64 = !!m[2];
+    const payload = m[3];
+    const buf = isB64 ? Buffer.from(payload, "base64") : Buffer.from(decodeURIComponent(payload), "utf8");
+    const ext = mime.includes("png")
+      ? "png"
+      : mime.includes("webp")
+        ? "webp"
+        : mime.includes("jpeg") || mime.includes("jpg")
+          ? "jpg"
+          : "png";
+    const out = path.join(dir, `poster.${ext}`);
+    await writeFile(out, buf);
+    return out;
+  }
+  // http(s) / Convex storage URL — ffmpeg auto-detects the format from content.
+  return download(src, path.join(dir, "poster.img"));
+}
+
+// ----------------------------------------------------------------------------
 // Edge-TTS narration (FREE, no key). Returns true on success.
 // ----------------------------------------------------------------------------
 let MsEdgeTTS = null;
@@ -334,11 +430,35 @@ async function makeSilence(seconds, outPath) {
   return outPath;
 }
 
+// Build the drawtext caption filter string (or "" when captions are off / the
+// ffmpeg build lacks drawtext / no font / no caption). Shared by every segment.
+async function buildCaptionFilter({ caption, aspect, captionsOn, dir, index }) {
+  if (!captionsOn || !caption) return "";
+  const fontFile = await resolveFont();
+  if (!fontFile || !(await drawtextAvailable())) return "";
+  const capPath = path.join(dir, `cap_${index}.txt`);
+  await writeFile(capPath, wrapCaption(caption));
+  const fontSize = aspect.h >= aspect.w ? 56 : 48;
+  const yPos = aspect.h >= aspect.w ? "h-text_h-260" : "h-text_h-90";
+  return [
+    `drawtext=fontfile=${quoteFilterPath(fontFile)}`,
+    `textfile=${quoteFilterPath(capPath)}`,
+    `reload=0`,
+    `fontcolor=white`,
+    `fontsize=${fontSize}`,
+    `line_spacing=12`,
+    `box=1`,
+    `boxcolor=black@0.55`,
+    `boxborderw=28`,
+    `x=(w-text_w)/2`,
+    `y=${yPos}`,
+  ].join(":");
+}
+
 // ----------------------------------------------------------------------------
-// Build one captioned, fixed-duration, audio-less video segment.
+// Build one captioned, fixed-duration, audio-less video segment (Pexels path).
 // ----------------------------------------------------------------------------
 async function buildSegment({ clipPath, duration, caption, aspect, captionsOn, dir, index, outPath }) {
-  const fontFile = await resolveFont();
   const vfParts = [];
 
   if (clipPath) {
@@ -349,42 +469,12 @@ async function buildSegment({ clipPath, duration, caption, aspect, captionsOn, d
     );
   }
 
-  if (captionsOn && fontFile && caption && (await drawtextAvailable())) {
-    const capPath = path.join(dir, `cap_${index}.txt`);
-    await writeFile(capPath, wrapCaption(caption));
-    const fontSize = aspect.h >= aspect.w ? 56 : 48;
-    const yPos = aspect.h >= aspect.w ? "h-text_h-260" : "h-text_h-90";
-    vfParts.push(
-      [
-        `drawtext=fontfile=${quoteFilterPath(fontFile)}`,
-        `textfile=${quoteFilterPath(capPath)}`,
-        `reload=0`,
-        `fontcolor=white`,
-        `fontsize=${fontSize}`,
-        `line_spacing=12`,
-        `box=1`,
-        `boxcolor=black@0.55`,
-        `boxborderw=28`,
-        `x=(w-text_w)/2`,
-        `y=${yPos}`,
-      ].join(":"),
-    );
-  }
+  const cap = await buildCaptionFilter({ caption, aspect, captionsOn, dir, index });
+  if (cap) vfParts.push(cap);
 
   const vf = vfParts.join(",");
-  const common = [
-    "-an",
-    "-c:v",
-    "libx264",
-    "-pix_fmt",
-    "yuv420p",
-    "-preset",
-    "veryfast",
-    "-r",
-    String(FPS),
-    "-t",
-    String(duration),
-  ];
+  const enc = await videoEncoderArgs();
+  const common = ["-an", ...enc, "-r", String(FPS), "-t", String(duration)];
 
   if (clipPath) {
     await execFileP(
@@ -401,6 +491,70 @@ async function buildSegment({ clipPath, duration, caption, aspect, captionsOn, d
       { maxBuffer: 1024 * 1024 * 64 },
     );
   }
+  return outPath;
+}
+
+// Linear, jitter-free zoompan expressions (z / x / y) for a Ken-Burns preset.
+// Motion is driven by the OUTPUT frame index `on` so it never accumulates
+// rounding error. Pans use a constant zoom so the crop window stays in bounds.
+function kenBurnsExprs(preset, frames) {
+  let z;
+  if (preset.zoom === "in") z = `1+${KEN_BURNS_AMP}*on/${frames}`;
+  else if (preset.zoom === "out") z = `${(1 + KEN_BURNS_AMP).toFixed(3)}-${KEN_BURNS_AMP}*on/${frames}`;
+  else z = `${KEN_BURNS_HOLD}`;
+
+  let x = `iw/2-(iw/zoom/2)`;
+  let y = `ih/2-(ih/zoom/2)`;
+  if (preset.pan === "ltr") x = `(iw-iw/zoom)*on/${frames}`;
+  else if (preset.pan === "rtl") x = `(iw-iw/zoom)*(1-on/${frames})`;
+  else if (preset.pan === "ttb") y = `(ih-ih/zoom)*on/${frames}`;
+  else if (preset.pan === "btt") y = `(ih-ih/zoom)*(1-on/${frames})`;
+  return { z, x, y };
+}
+
+// ----------------------------------------------------------------------------
+// KEN-BURNS segment — animate ONE still image (the gpt-image-1 ad) with a slow
+// pan/zoom, scaled+cropped to the target aspect. The image is decoded ONCE (no
+// `-loop`); zoompan expands that single frame to `frames` output frames, so the
+// expensive scale runs a single time → renders in well under a second per scene.
+// ----------------------------------------------------------------------------
+async function buildKenBurnsSegment({ imagePath, duration, caption, aspect, captionsOn, dir, index, outPath }) {
+  const frames = Math.max(1, Math.round(duration * FPS));
+  // 2× intermediate canvas → smooth sub-pixel motion; cropped once to 9:16.
+  const iw = aspect.w * 2;
+  const ih = aspect.h * 2;
+  const preset = KEN_BURNS_PRESETS[index % KEN_BURNS_PRESETS.length];
+  const { z, x, y } = kenBurnsExprs(preset, frames);
+
+  const vfParts = [
+    `scale=${iw}:${ih}:force_original_aspect_ratio=increase`,
+    `crop=${iw}:${ih}`,
+    `zoompan=z='${z}':x='${x}':y='${y}':d=${frames}:s=${aspect.w}x${aspect.h}:fps=${FPS}`,
+    `format=yuv420p`,
+  ];
+
+  const cap = await buildCaptionFilter({ caption, aspect, captionsOn, dir, index });
+  if (cap) vfParts.push(cap);
+
+  const enc = await videoEncoderArgs();
+  await execFileP(
+    "ffmpeg",
+    [
+      "-y",
+      "-i",
+      imagePath,
+      "-vf",
+      vfParts.join(","),
+      "-an",
+      ...enc,
+      "-r",
+      String(FPS),
+      "-t",
+      String(duration),
+      outPath,
+    ],
+    { maxBuffer: 1024 * 1024 * 64 },
+  );
   return outPath;
 }
 
@@ -443,6 +597,23 @@ async function render(body) {
     const audPaths = [];
     let usedPexels = false;
     let usedTts = false;
+    let usedKenBurns = false;
+
+    // FAST PATH: when the caller supplies a poster image (the already-generated
+    // gpt-image-1 ad), fetch it ONCE and animate it (Ken-Burns) — skipping the
+    // ~8-min Pexels-download + libx264 path entirely. If the fetch fails we fall
+    // back to Pexels per-scene, so this stays graceful.
+    let posterPath = null;
+    const posterSrc = resolvePosterSource(body);
+    if (posterSrc) {
+      try {
+        posterPath = await fetchPosterToFile(posterSrc, work);
+        log(`ken-burns fast path: animating poster image (${posterSrc.slice(0, 64)}…)`);
+      } catch (e) {
+        log("poster fetch failed — falling back to Pexels:", String(e?.message || e));
+        posterPath = null;
+      }
+    }
 
     for (let i = 0; i < scenes.length; i++) {
       const scene = scenes[i];
@@ -469,31 +640,45 @@ async function render(body) {
         audPaths.push(audPath);
       }
 
-      // 2) Stock footage for the scene (best effort).
-      let clipPath = null;
-      const link = await pexelsClipUrl(scene.query || topic, aspect);
-      if (link) {
-        try {
-          clipPath = await download(link, path.join(work, `clip_${i}.mp4`));
-          usedPexels = true;
-        } catch (e) {
-          log("clip download failed:", String(e?.message || e));
-          clipPath = null;
-        }
-      }
-
-      // 3) Build the captioned segment.
+      // 2) Visuals + segment.
       const segPath = path.join(work, `seg_${i}.mp4`);
-      await buildSegment({
-        clipPath,
-        duration,
-        caption: scene.text,
-        aspect,
-        captionsOn,
-        dir: work,
-        index: i,
-        outPath: segPath,
-      });
+      if (posterPath) {
+        // FAST PATH — Ken-Burns animate the single poster image (no download).
+        await buildKenBurnsSegment({
+          imagePath: posterPath,
+          duration,
+          caption: scene.text,
+          aspect,
+          captionsOn,
+          dir: work,
+          index: i,
+          outPath: segPath,
+        });
+        usedKenBurns = true;
+      } else {
+        // FALLBACK — Pexels stock footage for the scene (best effort).
+        let clipPath = null;
+        const link = await pexelsClipUrl(scene.query || topic, aspect);
+        if (link) {
+          try {
+            clipPath = await download(link, path.join(work, `clip_${i}.mp4`));
+            usedPexels = true;
+          } catch (e) {
+            log("clip download failed:", String(e?.message || e));
+            clipPath = null;
+          }
+        }
+        await buildSegment({
+          clipPath,
+          duration,
+          caption: scene.text,
+          aspect,
+          captionsOn,
+          dir: work,
+          index: i,
+          outPath: segPath,
+        });
+      }
       segPaths.push(segPath);
     }
 
@@ -534,13 +719,29 @@ async function render(body) {
       videoBase64 = (await readFile(finalPath)).toString("base64");
     }
 
-    log(`rendered ${finalPath} (${(st.size / 1024 / 1024).toFixed(2)}MB, ${totalDuration.toFixed(1)}s, ${scenes.length} scenes)`);
+    const outModel = usedKenBurns ? "kenburns-image-edgetts" : model;
+    const degraded = usedKenBurns ? !usedTts : !usedPexels || !usedTts;
+    const reason = usedKenBurns
+      ? !usedTts
+        ? "no_narration"
+        : undefined
+      : !usedPexels
+        ? "no_stock_footage"
+        : !usedTts
+          ? "no_narration"
+          : undefined;
+
+    log(
+      `rendered ${finalPath} (${(st.size / 1024 / 1024).toFixed(2)}MB, ${totalDuration.toFixed(1)}s, ` +
+        `${scenes.length} scenes, ${usedKenBurns ? "ken-burns" : "pexels"}, ` +
+        `${(await videotoolboxAvailable()) ? "h264_videotoolbox" : "libx264"})`,
+    );
 
     return {
       ok: true,
-      degraded: !usedPexels || !usedTts,
-      reason: !usedPexels ? "no_stock_footage" : !usedTts ? "no_narration" : undefined,
-      model,
+      degraded,
+      reason,
+      model: outModel,
       path: finalPath,
       url: `${PUBLIC_BASE}/media/${outId}.mp4`,
       contentType: "video/mp4",
@@ -549,6 +750,7 @@ async function render(body) {
       scenes: scenes.length,
       usedPexels,
       usedTts,
+      usedKenBurns,
       videoBase64,
       ...(targetTotal ? { requestedDuration: targetTotal } : {}),
     };
@@ -606,6 +808,8 @@ const server = http.createServer(async (req, res) => {
         pexels: !!PEXELS_API_KEY,
         tts: ttsReady,
         captions: ffmpeg ? await drawtextAvailable() : false,
+        kenburns: true,
+        videotoolbox: ffmpeg ? await videotoolboxAvailable() : false,
         voice: DEFAULT_VOICE,
       });
     }

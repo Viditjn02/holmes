@@ -40,6 +40,13 @@ export interface RenderVideoInput {
   voice?: string;
   /** Burn captions (default true; auto-skipped if ffmpeg lacks drawtext). */
   captions?: boolean;
+  /**
+   * Poster image (the already-generated gpt-image-1 ad). When present the worker
+   * takes the KEN-BURNS FAST PATH — it animates this single image (pan/zoom,
+   * hardware-encoded) in seconds instead of downloading per-scene Pexels clips.
+   * Accepts an http(s) URL, a Convex storage URL, or a `data:` URI.
+   */
+  posterUrl?: string;
 }
 
 export interface RenderVideoResult {

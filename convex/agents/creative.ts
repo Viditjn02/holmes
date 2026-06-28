@@ -59,6 +59,22 @@ export const context = internalQuery({
       .collect();
     const reelInsight = creatives.find((c) => c.kind === "reel-analysis");
 
+    // The already-generated gpt-image-1 ad image (same poster brief.getCreative
+    // exposes). Passing it to the free worker triggers the KEN-BURNS FAST PATH —
+    // animating that one image in seconds instead of downloading Pexels clips.
+    // Best-effort: null just means the worker uses its Pexels fallback.
+    let posterUrl: string | null = null;
+    try {
+      const ads = await ctx.db
+        .query("adCreatives")
+        .withIndex("by_run", (q) => q.eq("runId", runId))
+        .collect();
+      const withImage = ads.find((a) => a.imageStatus === "done" && !!a.imageUrl);
+      posterUrl = withImage?.imageUrl ?? null;
+    } catch {
+      posterUrl = null;
+    }
+
     return {
       company: run?.company ?? run?.input ?? "the company",
       input: run?.input ?? "",
@@ -70,6 +86,7 @@ export const context = internalQuery({
         intentLabel: t.intentLabel,
       })),
       reelInsight: reelInsight?.prompt ?? null,
+      posterUrl,
     };
   },
 });
@@ -244,6 +261,9 @@ async function tryFreeWorker(
       scenes: buildAdScenes(data),
       aspectRatio: AD_ASPECT_RATIO,
       durationSeconds: AD_DURATION_SECONDS,
+      // Hand the gpt-image-1 ad image to the worker → KEN-BURNS FAST PATH
+      // (animate the image in seconds). Absent ⇒ worker uses Pexels. Graceful.
+      ...(data.posterUrl ? { posterUrl: data.posterUrl } : {}),
     });
     if (!result.ok || !result.videoBase64) return null;
 
@@ -307,6 +327,7 @@ interface AdContext {
   positioning: string;
   threads: { title: string; snippet: string; intentLabel: string }[];
   reelInsight: string | null;
+  posterUrl: string | null;
 }
 
 function buildAdPrompt(data: AdContext): string {
