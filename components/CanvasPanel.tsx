@@ -235,7 +235,6 @@ export default function CanvasPanel({
             <CanvasGhost
               hasConversation={!!conversationId}
               reducedMotion={reducedMotion}
-              onOpenBrain={() => morphView("brain")}
             />
           )}
         </div>

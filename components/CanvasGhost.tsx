@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 // a scannable, clickable map of everything INTERCEPT does. Each track card
 // pre-fills the composer with a ready-to-run prompt (one click → the swarm
 // builds it), so a first-time user (or a judge) immediately sees the full GTM
-// stack and can fire any capability. The Brain card opens the knowledge graph.
+// stack and can fire any capability.
 // Editorial/flat (content you read) — no glass here. Motion gated on reduced.
 // ============================================================================
 
@@ -108,14 +108,11 @@ const TRACKS: readonly Track[] = [
 interface CanvasGhostProps {
   hasConversation: boolean;
   reducedMotion: boolean;
-  /** Open the compounding-knowledge Brain board on the canvas. */
-  onOpenBrain?: () => void;
 }
 
 export default function CanvasGhost({
   hasConversation,
   reducedMotion,
-  onOpenBrain,
 }: CanvasGhostProps) {
   return (
     <div className="col-scroll h-full min-h-0 overflow-y-auto px-6 py-7">
@@ -180,35 +177,6 @@ export default function CanvasGhost({
               </button>
             );
           })}
-
-          {/* the Brain — opens the knowledge graph instead of pre-filling chat */}
-          <button
-            type="button"
-            onClick={onOpenBrain}
-            className={cn(
-              "group relative overflow-hidden rounded-lg border border-hairline bg-block-navy/95 p-4 text-left text-canvas transition-all sm:col-span-2",
-              "hover:-translate-y-px hover:shadow-soft",
-              !reducedMotion && "animate-fade-up",
-            )}
-            style={!reducedMotion ? { animationDelay: `${TRACKS.length * 45}ms` } : undefined}
-          >
-            <div className="flex items-center gap-3">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-canvas/15">
-                <BrainIcon className="h-4 w-4 text-canvas" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[14px] font-fig-card leading-snug">The Brain</p>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-canvas/70">
-                  The knowledge graph every run feeds — open the live map.
-                </p>
-              </div>
-              <span className="shrink-0 text-canvas/50 transition-transform group-hover:translate-x-0.5">
-                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-                  <path d="M5 12h14M13 6l6 6-6 6" />
-                </svg>
-              </span>
-            </div>
-          </button>
         </div>
 
         <p className="mt-5 text-[11px] text-ink/45">
@@ -289,10 +257,3 @@ function ScoutIcon({ className }: { className?: string }) {
   );
 }
 
-function BrainIcon({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" className={className} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M9 4.5a2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 0-1 4.8A2.5 2.5 0 0 0 7 16.5a2.5 2.5 0 0 0 5 .5V6.5A2.5 2.5 0 0 0 9 4.5ZM15 4.5A2.5 2.5 0 0 1 17.5 7a2.5 2.5 0 0 1 1 4.8A2.5 2.5 0 0 1 17 16.5a2.5 2.5 0 0 1-5 .5" />
-    </svg>
-  );
-}
