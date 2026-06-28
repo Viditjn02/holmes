@@ -12,8 +12,12 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  // Light theme → white canvas (was "#0a0a0b" dark).
-  themeColor: "#ffffff",
+  // Browser chrome matches the canvas per scheme: white (light) · neutral
+  // charcoal #0B0C0E (dark — the retuned Linear/Attio-grade night ground).
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0B0C0E" },
+  ],
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,

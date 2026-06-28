@@ -92,40 +92,45 @@
     --ease-out: cubic-bezier(0, 0, 0.2, 1);
   }
 
-  /* ── NIGHT: derived from block-navy #1f1d3d + inverse-canvas/inverse-ink ──── */
-  /* Applies via the toggle's `.dark` class OR a server-set [data-theme="dark"]. */
+  /* ── NIGHT: modern AI-native neutral charcoal (Linear / Vercel / Attio-grade) ──
+     Retuned away from the dated purple-navy (#15142a/#1f1d3d). The ground is a
+     near-black COOL-NEUTRAL charcoal (no purple cast); surfaces step up by a few
+     L* points; borders are low-chroma hairlines; text is a soft near-white (not
+     pure #fff, which glares on dark). One restrained accent (magenta) is kept.
+     Applies via the toggle's `.dark` class OR a server-set [data-theme="dark"]. */
   .dark,
   [data-theme="dark"] {
     color-scheme: dark;
 
-    /* chrome inverts: white ink on a deep-navy canvas; primary becomes a white pill */
-    --canvas: 21 20 42; /* #15142a — navy darkened (the page ground) */
-    --ink: 255 255 255; /* inverse-ink */
-    --primary: 255 255 255; /* white pill */
-    --on-primary: 31 29 61; /* #1f1d3d navy text on the white pill */
-    --inverse-canvas: 255 255 255; /* white strip in dark mode */
-    --inverse-ink: 21 20 42; /* #15142a navy text on the white strip */
+    /* chrome inverts: soft near-white ink on a neutral-charcoal canvas; the
+       primary CTA is a near-white pill with charcoal text */
+    --canvas: 11 12 14; /* #0B0C0E — neutral near-black ground (Linear-ish) */
+    --ink: 244 245 246; /* #F4F5F6 — soft near-white, easier on the eyes than #fff */
+    --primary: 250 250 250; /* #FAFAFA — near-white pill */
+    --on-primary: 11 12 14; /* #0B0C0E — charcoal text on the near-white pill */
+    --inverse-canvas: 250 250 250; /* near-white strip in dark mode */
+    --inverse-ink: 11 12 14; /* #0B0C0E — charcoal text on the near-white strip */
     --on-inverse-soft: 255 255 255;
 
-    /* surface-soft IS the navy (raised tiles lift off the darker canvas) */
-    --surface-soft: 31 29 61; /* #1f1d3d */
-    --hairline: 52 50 79; /* #34324f */
-    --hairline-soft: 38 35 64; /* #262340 */
+    /* raised tiles lift off the ground via a neutral elevation step (not navy) */
+    --surface-soft: 22 24 27; /* #16181B — elevated surface (cards, tiles) */
+    --hairline: 42 45 51; /* #2A2D33 — visible neutral border */
+    --hairline-soft: 31 34 38; /* #1F2226 — faint divider */
 
-    /* pastels stay constant — they read as poster panels on the navy ground.
-       Only block-navy is nudged lighter so a navy SECTION still lifts off canvas. */
-    --block-navy: 42 39 71; /* #2a2747 */
+    /* pastels stay constant — they read as poster panels on the charcoal ground.
+       block-navy becomes a NEUTRAL elevated panel so dark sections feel modern. */
+    --block-navy: 33 36 42; /* #21242A — neutral elevated section */
 
-    /* glass goes navy-derived; borders drop to a fainter hairline on dark */
-    --glass-1-bg: 21 20 42; /* #15142a */
-    --glass-1-alpha: 0.78;
-    --glass-2-bg: 31 29 61; /* #1f1d3d */
-    --glass-2-alpha: 0.72;
-    --glass-3-bg: 31 29 61; /* #1f1d3d */
-    --glass-3-alpha: 0.82;
-    --glass-border-alpha: 0.1;
-    --glass-shadow-1: 0 4px 16px rgb(0 0 0 / 0.3);
-    --glass-shadow-2: 0 8px 32px rgb(0 0 0 / 0.4);
+    /* glass goes charcoal-derived; borders drop to a fainter hairline on dark */
+    --glass-1-bg: 11 12 14; /* #0B0C0E */
+    --glass-1-alpha: 0.72;
+    --glass-2-bg: 22 24 27; /* #16181B */
+    --glass-2-alpha: 0.66;
+    --glass-3-bg: 22 24 27; /* #16181B */
+    --glass-3-alpha: 0.8;
+    --glass-border-alpha: 0.08;
+    --glass-shadow-1: 0 4px 16px rgb(0 0 0 / 0.4);
+    --glass-shadow-2: 0 12px 40px rgb(0 0 0 / 0.55);
 
     /* accent / semantic + motion unchanged */
   }
