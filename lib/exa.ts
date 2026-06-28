@@ -15,10 +15,13 @@ export interface ExaThread {
   url: string;
   title: string;
   snippet: string;
+  author?: string;
   publishedDate?: string;
 }
 
-export interface SearchThreadsOpts {
+export interface SearchThreadsArgs {
+  /** Buyer-intent search query. Required, non-empty. */
+  query: string;
   /** How many threads to pull back. Defaults to 8 (MAX_THREADS). */
   numResults?: number;
   /** Override the communities to search. Defaults to Reddit + Hacker News. */
@@ -59,20 +62,22 @@ function toSnippet(text: string | undefined, fallback: string | undefined): stri
 /**
  * Search live communities for threads matching a buyer-intent query.
  * Returns real, clickable URLs — the core of THE MOAT.
+ *
+ * Object-form signature shared with detective:
+ *   searchThreads({ query, includeDomains?, numResults?, type? })
  */
 export async function searchThreads(
-  query: string,
-  opts: SearchThreadsOpts = {},
+  args: SearchThreadsArgs,
 ): Promise<ExaThread[]> {
-  const trimmed = query.trim();
+  const trimmed = args.query.trim();
   if (!trimmed) {
     throw new Error("searchThreads requires a non-empty query.");
   }
 
   const exa = getClient();
-  const numResults = opts.numResults ?? DEFAULT_NUM_RESULTS;
-  const includeDomains = opts.includeDomains ?? [...DEFAULT_INCLUDE_DOMAINS];
-  const type = opts.type ?? "keyword";
+  const numResults = args.numResults ?? DEFAULT_NUM_RESULTS;
+  const includeDomains = args.includeDomains ?? [...DEFAULT_INCLUDE_DOMAINS];
+  const type = args.type ?? "keyword";
 
   const response = await exa.searchAndContents(trimmed, {
     numResults,
@@ -87,6 +92,7 @@ export async function searchThreads(
       url: r.url,
       title: (r.title ?? r.url).trim(),
       snippet: toSnippet((r as { text?: string }).text, r.title ?? undefined),
+      author: (r as { author?: string }).author?.trim() || undefined,
       publishedDate: r.publishedDate ?? undefined,
     }));
 }

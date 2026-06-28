@@ -25,7 +25,7 @@ import {
   internalMutation,
   internalQuery,
 } from "../_generated/server";
-import { internal } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
   MAX_COMMUNITIES,
@@ -84,10 +84,10 @@ interface ScoredThread extends Candidate {
 export const run = internalAction({
   args: { runId: v.id("runs") },
   handler: async (ctx, { runId }) => {
-    const run = await ctx.runQuery(internal.runs.getRun, { runId });
+    const run = await ctx.runQuery(internal.runs.getRunInternal, { runId });
     if (!run) throw new Error(`detective: run ${runId} not found`);
 
-    const brief = await ctx.runQuery(internal.brief.getBrief, { runId });
+    const brief = await ctx.runQuery(api.brief.getBrief, { runId });
     const company = (run.company ?? run.input ?? "").trim();
     const icp = brief?.icp?.trim() ?? "";
     const positioning = brief?.positioning?.trim() ?? "";

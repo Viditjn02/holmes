@@ -6,6 +6,7 @@
 // ============================================================================
 
 import { GoogleGenAI } from "@google/genai";
+import { safeFetch } from "./safeFetch";
 
 const GEMINI_MODEL = "gemini-2.5-flash";
 
@@ -28,17 +29,21 @@ function getClient(): GoogleGenAI {
   return cachedClient;
 }
 
+// Shape consumed by the watcher agent (convex/agents/watcher.ts): hook / pacing
+// / cta (+ optional visualStyle). Keep these keys in sync with that consumer.
 export interface ReelAnalysis {
-  hook_type: string;
+  hook: string;
   pacing: string;
-  cta_text: string;
+  cta: string;
+  visualStyle?: string;
   [key: string]: unknown;
 }
 
 const RESPONSE_SCHEMA_HINT = `{
-  "hook_type": string,   // e.g. "question", "bold-claim", "pattern-interrupt"
-  "pacing": string,      // e.g. "fast-cut", "slow-build", "steady"
-  "cta_text": string     // the call-to-action text/idea
+  "hook": string,        // the first-2-seconds attention grab
+  "pacing": string,      // edit rhythm / shot cadence, e.g. "fast-cut", "slow-build"
+  "cta": string,         // the closing call-to-action text/idea
+  "visualStyle": string  // optional look-and-feel notes
 }`;
 
 /**
@@ -51,7 +56,9 @@ async function buildVideoPart(
   fileUrl: string,
 ): Promise<{ fileData: { fileUri: string; mimeType: string } }> {
   if (fileUrl.startsWith("http://") || fileUrl.startsWith("https://")) {
-    const resp = await fetch(fileUrl);
+    // SSRF guard: this URL is user-supplied (the watcher's reelUrl). safeFetch
+    // rejects private/loopback/metadata hosts and re-validates every redirect.
+    const resp = await safeFetch(fileUrl);
     if (!resp.ok) {
       throw new Error(`Failed to fetch reel (${resp.status}) from ${fileUrl}`);
     }

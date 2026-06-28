@@ -13,6 +13,8 @@
 // firmographic guess. The fallback keeps the swarm running on a bare key set.
 // ============================================================================
 
+import { safeFetch } from "./safeFetch";
+
 const ORANGESLICE_BASE_URL =
   process.env.ORANGESLICE_BASE_URL ?? "https://api.orangeslice.ai/v1";
 
@@ -54,9 +56,10 @@ async function enrichViaHtml(domain: string): Promise<Firmographics> {
   const url = `https://${domain}`;
   let html = "";
   try {
-    const resp = await fetch(url, {
+    // SSRF guard: `domain` is user-supplied. safeFetch rejects private/loopback/
+    // metadata hosts and re-validates redirects before reading any bytes.
+    const resp = await safeFetch(url, {
       headers: { "user-agent": "HolmesBot/1.0 (+enrichment)" },
-      redirect: "follow",
     });
     if (resp.ok) {
       html = await resp.text();

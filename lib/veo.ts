@@ -42,9 +42,22 @@ function getClient(): GoogleGenAI {
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// Object-form input shared with the Creative agent (convex/agents/creative.ts):
+//   generateAd({ prompt, aspectRatio?, durationSeconds? })
+export interface GenerateAdInput {
+  /** The cinematic ad prompt. Required, non-empty. */
+  prompt: string;
+  /** Aspect ratio, e.g. "16:9" or "9:16". Defaults to "16:9". */
+  aspectRatio?: string;
+  /** Target duration in seconds (advisory — Veo fast has a fixed length). */
+  durationSeconds?: number;
+}
+
 export interface GenerateAdResult {
   /** Directly fetchable video URL (Files API uri with key appended). */
   url?: string;
+  /** The model that produced the clip (echoed back for the board). */
+  model?: string;
 }
 
 /**
@@ -54,8 +67,10 @@ export interface GenerateAdResult {
  * Never throws on "no video yet"/timeout — returns { url: undefined } so the
  * orchestrator's fan-in can render a partial brief instead of blocking.
  */
-export async function generateAd(prompt: string): Promise<GenerateAdResult> {
-  const trimmed = prompt.trim();
+export async function generateAd(
+  input: GenerateAdInput,
+): Promise<GenerateAdResult> {
+  const trimmed = input.prompt.trim();
   if (!trimmed) {
     throw new Error("generateAd requires a non-empty prompt.");
   }
@@ -68,7 +83,7 @@ export async function generateAd(prompt: string): Promise<GenerateAdResult> {
     prompt: trimmed,
     config: {
       numberOfVideos: 1,
-      aspectRatio: "16:9",
+      aspectRatio: input.aspectRatio ?? "16:9",
     },
   });
 
@@ -81,16 +96,16 @@ export async function generateAd(prompt: string): Promise<GenerateAdResult> {
 
   if (!operation.done) {
     // Timed out — let the caller fall back to the fixture clip.
-    return { url: undefined };
+    return { url: undefined, model: VEO_MODEL };
   }
 
   const video = operation.response?.generatedVideos?.[0]?.video;
   const uri = video?.uri;
   if (!uri) {
-    return { url: undefined };
+    return { url: undefined, model: VEO_MODEL };
   }
 
   // The Files API uri requires the API key to download the bytes.
   const separator = uri.includes("?") ? "&" : "?";
-  return { url: `${uri}${separator}key=${apiKey}` };
+  return { url: `${uri}${separator}key=${apiKey}`, model: VEO_MODEL };
 }

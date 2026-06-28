@@ -37,29 +37,41 @@ export interface ChatOpts {
 }
 
 /**
+ * Arguments for {@link chatJSON}. The swarm agents call this in OBJECT form so
+ * every call site is self-documenting and order-independent.
+ */
+export interface ChatJSONArgs extends ChatOpts {
+  /** System prompt (role + constraints). */
+  system: string;
+  /** User prompt (the task / data). */
+  user: string;
+  /**
+   * Optional description of the desired JSON shape, appended to the system
+   * prompt to steer the structure. Most callers embed the schema in `user`.
+   */
+  schemaHint?: string;
+}
+
+/**
  * Call the model and parse a JSON object response. Uses response_format
  * json_object so the model is constrained to emit valid JSON.
  *
- * @param system  System prompt (role + constraints).
- * @param user    User prompt (the task / data).
- * @param schemaHint  Optional description of the desired JSON shape, appended
- *                    to the system prompt to steer the structure.
+ * Object-form signature shared by router/enrich/detective/reply:
+ *   chatJSON({ system, user, schemaHint?, model?, temperature?, maxTokens? })
  */
 export async function chatJSON<T = Record<string, unknown>>(
-  system: string,
-  user: string,
-  schemaHint?: string,
-  opts: ChatOpts = {},
+  args: ChatJSONArgs,
 ): Promise<T> {
+  const { system, user, schemaHint, model, temperature, maxTokens } = args;
   const client = getClient();
   const systemPrompt = schemaHint
     ? `${system}\n\nRespond with a single JSON object matching this shape:\n${schemaHint}`
     : `${system}\n\nRespond with a single valid JSON object.`;
 
   const completion = await client.chat.completions.create({
-    model: opts.model ?? DEFAULT_MODEL,
-    temperature: opts.temperature ?? 0.4,
-    max_tokens: opts.maxTokens,
+    model: model ?? DEFAULT_MODEL,
+    temperature: temperature ?? 0.4,
+    max_tokens: maxTokens,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },

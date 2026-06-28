@@ -24,14 +24,26 @@ const FALLBACK_POSITIONING =
  * - With values: write/overwrite icp + positioning.
  * - Without values + brief exists: leave it untouched.
  * - Without values + brief missing: insert a safe fallback.
+ *
+ * `company` (when provided by enrich) is stamped onto the run row — the brief
+ * table itself has no company column (see convex/schema.ts).
  */
 export async function upsertBrief(
   ctx: MutationCtx,
-  args: { runId: Id<"runs">; icp?: string; positioning?: string },
+  args: { runId: Id<"runs">; icp?: string; positioning?: string; company?: string },
 ): Promise<Id<"brief">> {
   const { runId } = args;
   const icp = args.icp?.trim() || undefined;
   const positioning = args.positioning?.trim() || undefined;
+  const company = args.company?.trim() || undefined;
+
+  // Stamp the resolved company name onto the run so the board header can show it.
+  if (company) {
+    const run = await ctx.db.get(runId);
+    if (run && !run.company) {
+      await ctx.db.patch(runId, { company });
+    }
+  }
 
   const existing = await ctx.db
     .query("brief")
@@ -61,12 +73,16 @@ export async function upsertBrief(
   });
 }
 
-/** Persist the brief. Enrich passes icp/positioning; finalize passes neither. */
+/**
+ * Persist the brief. Enrich passes icp/positioning (+ company, which is stamped
+ * onto the run); finalize passes neither.
+ */
 export const assembleBrief = internalMutation({
   args: {
     runId: v.id("runs"),
     icp: v.optional(v.string()),
     positioning: v.optional(v.string()),
+    company: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await upsertBrief(ctx, args);
@@ -81,5 +97,51 @@ export const getBrief = query({
       .query("brief")
       .withIndex("by_run", (q) => q.eq("runId", runId))
       .unique();
+  },
+});
+
+/** Communities discovered for a run (reactive, drives the "where buyers gather" row). */
+export const getCommunities = query({
+  args: { runId: v.id("runs") },
+  handler: async (ctx, { runId }) => {
+    return await ctx.db
+      .query("communities")
+      .withIndex("by_run", (q) => q.eq("runId", runId))
+      .collect();
+  },
+});
+
+/** THE MOAT: real, intent-scored threads for a run, highest intent first. */
+export const getThreads = query({
+  args: { runId: v.id("runs") },
+  handler: async (ctx, { runId }) => {
+    const threads = await ctx.db
+      .query("threads")
+      .withIndex("by_run", (q) => q.eq("runId", runId))
+      .collect();
+    return threads.sort((a, b) => b.intentScore - a.intentScore);
+  },
+});
+
+/** Drafted in-thread replies for a run (behind the human-approval gate). */
+export const getDrafts = query({
+  args: { runId: v.id("runs") },
+  handler: async (ctx, { runId }) => {
+    return await ctx.db
+      .query("drafts")
+      .withIndex("by_run", (q) => q.eq("runId", runId))
+      .collect();
+  },
+});
+
+/** The single rendered video creative for a run (kind === "video"), if any. */
+export const getCreative = query({
+  args: { runId: v.id("runs") },
+  handler: async (ctx, { runId }) => {
+    const creatives = await ctx.db
+      .query("creatives")
+      .withIndex("by_run", (q) => q.eq("runId", runId))
+      .collect();
+    return creatives.find((c) => c.kind === "video") ?? null;
   },
 });

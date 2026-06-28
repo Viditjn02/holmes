@@ -93,6 +93,21 @@ export const listRuns = query({
   },
 });
 
+/**
+ * Public read of the agentStatus rows for a run — drives the live swarm board
+ * (components/SwarmBoard.tsx via api.runs.agentStatuses). Reactive: re-renders
+ * as the orchestrator flips each agent's status.
+ */
+export const agentStatuses = query({
+  args: { runId: v.id("runs") },
+  handler: async (ctx, { runId }) => {
+    return await ctx.db
+      .query("agentStatus")
+      .withIndex("by_run", (q) => q.eq("runId", runId))
+      .collect();
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Internal helpers — only the orchestrator calls these.
 // ---------------------------------------------------------------------------
