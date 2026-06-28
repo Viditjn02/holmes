@@ -172,7 +172,10 @@ export type AgentName = AgentId;
 export type Phase = readonly AgentId[];
 export const CAPABILITY_PLANS: Readonly<Record<Capability, readonly Phase[]>> = {
   // Default bare-company sweep — full swarm, now grounded by the adscout scan.
-  analyze: [["router"], ["enrich"], ["detective", "adscout"], ["reply", "creative", "adsmith", "watcher"]],
+  // adsmith runs BEFORE creative so the gpt-image-1 ad image is ready when the
+  // video lane reads it → the free Ken-Burns fast path fires (seconds, not the
+  // slow Pexels path). Creative degrades gracefully if the image isn't done.
+  analyze: [["router"], ["enrich"], ["detective", "adscout"], ["reply", "adsmith", "watcher"], ["creative"]],
   // Just the moat.
   discovery: [["router"], ["enrich"], ["detective"], ["reply"]],
   // OrangeSlice + Fiber discovery → qualify → draft emails (gated, not sent).
@@ -180,9 +183,11 @@ export const CAPABILITY_PLANS: Readonly<Record<Capability, readonly Phase[]>> = 
   outbound: [["router"], ["enrich"], ["sourcer"], ["qualifier"], ["writer"], ["twin"]],
   // Act on already-approved work: send + follow up. No re-discovery.
   outreach: [["sender"], ["follower"]],
-  // AD FACTORY (create) — scan FIRST, then make the image+copy (adsmith) and the
-  // video (creative) in parallel, grounded in the live scan's winning angles.
-  content: [["router"], ["enrich"], ["adscout"], ["adsmith", "creative"]],
+  // AD FACTORY (create) — scan FIRST, make the image+copy (adsmith), THEN the
+  // video (creative), so the gpt-image-1 image is ready and the video lane can
+  // animate it via the free Ken-Burns fast path (seconds) instead of the slow
+  // Pexels download path. Both are grounded in the live scan's winning angles.
+  content: [["router"], ["enrich"], ["adscout"], ["adsmith"], ["creative"]],
   // AD INTELLIGENCE (scan) — scan + score; watcher optional reel teardown.
   competitor: [["router"], ["enrich"], ["adscout", "watcher"]],
   // REPLICATE — drop a post/ad URL → improved replica (adsmith reads run.sourceUrl).
