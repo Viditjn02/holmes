@@ -1,34 +1,61 @@
 // ============================================================================
-// INTERCEPT — ORANGE SLICE ENRICHMENT + OUTBOUND DISCOVERY CLIENT  (REAL DATA)
+// INTERCEPT — ORANGE SLICE ENRICHMENT + SOURCING + SIGNAL ENGINE  (REAL DATA)
 // ----------------------------------------------------------------------------
-// WHAT THIS IS (and the honest provenance behind the "orangeslice" label):
-//   OrangeSlice ships as a sheet / workflow / MCP product gated behind a login —
-//   it has NO public Bearer REST `/v1/enrich` endpoint (the previous build called
-//   a fabricated `api.orangeslice.ai/v1/enrich`, which does not exist and returned
-//   nothing real). The DOCUMENTED, working interim path for the same firmographic
-//   + people data is Apollo.io's REST API (header `X-Api-Key`). We keep the
-//   `source: "orangeslice"` provenance label and the `enrichCompany()` signature
-//   so the rest of the swarm is unchanged, but every byte here is a REAL API call
-//   to a REAL endpoint — never a stub.
+// This talks to the REAL Orange Slice backend (our #1 sponsor + organizer). The
+// `orangeslice` npm package wraps POST calls to an "execute" gateway; we call
+// that gateway DIRECTLY via fetch instead of importing the package, because the
+// package pulls in Node-only `node:async_hooks` (AsyncLocalStorage) and would
+// break the Convex default-runtime bundle (same class of bug that bit us with
+// node:dns). Direct fetch over the documented endpoints sidesteps that entirely.
 //
-//   • enrichCompany(domain)      → Apollo POST /v1/organizations/enrich     (firmographics)
-//   • discoverCompanies(filters) → Apollo POST /v1/mixed_companies/search   (ICP → accounts)
-//   • findPeople(domain,titles)  → Apollo POST /v1/mixed_people/search      (decision-makers)
+//   Base URL : https://enrichly-production.up.railway.app   (ORANGESLICE_BASE_URL)
+//   Auth     : Authorization: Bearer ${ORANGESLICE_API_KEY}
+//   Transport: POST <endpoint> { ...payload, inlineWaitMs }. If the gateway
+//              replies `{ pending: true, requestId | pollUrl }` we poll
+//              /function/result/:requestId until it resolves (bounded).
 //
-// GRACEFUL DEGRADATION: with no APOLLOIO_API_KEY (or on any network/API error)
-//   - enrichCompany falls back to a documented homepage HTML scrape (real, just
-//     thinner), and
-//   - discoverCompanies / findPeople return [] (the caller layers an LLM/seed
-//     fallback so the pipeline is never empty).
-// It NEVER throws — outbound must degrade, never block the swarm.
+// REAL endpoints wired (path == the value the SDK passes to its post() helper):
+//   • enrichCompany(domain)        → POST /execute/sql            (b2b LinkedIn
+//        firmographics: linkedin_company ⋈ lkd_company by domain — the SDK's
+//        company.linkedin.enrich query over 1.15B profiles).
+//   • discoverCompanies(filters)   → POST /execute/oceanio        (ocean
+//        search-companies: ICP filters → target accounts).
+//   • findPeople(domain, titles)   → POST /execute/b2b-company-employees
+//        (decision-makers at a company; emails stay LOCKED here).
+//   • revealContactEmail(person)   → POST /execute/contact-waterfall
+//        (person.contact.get: reveal a verified work email).
+//   • fetchCompanySignals(domain)  → POST /execute/predictleads
+//        (predictLeads: hiring / funding triggers).
+//
+// GRACEFUL DEGRADATION: with no ORANGESLICE_API_KEY (or a placeholder), or on ANY
+// network/timeout/non-2xx/error response, every call catches and returns the
+// existing fallback:
+//   - enrichCompany  → documented homepage HTML meta-tag scrape (real, thinner),
+//   - discoverCompanies / findPeople → []   (the sourcer layers an LLM + seed
+//     fallback on top, so the pipeline is never empty),
+//   - revealContactEmail / fetchCompanySignals → null.
+// It NEVER throws — outbound must degrade, never block the swarm. We keep the
+// `source: "orangeslice"` provenance labels and the existing call signatures so
+// the rest of the swarm is unchanged.
 // ============================================================================
 
 import { safeFetch } from "./safeFetch";
 
-const APOLLO_BASE_URL =
-  process.env.APOLLOIO_BASE_URL ?? "https://api.apollo.io/v1";
+const ORANGESLICE_BASE_URL = (
+  process.env.ORANGESLICE_BASE_URL ?? "https://enrichly-production.up.railway.app"
+).replace(/\/+$/, "");
 
-const APOLLO_TIMEOUT_MS = 12_000;
+// Per-request timeout for a single POST/poll hop, the inline wait we ask the
+// gateway to hold a request open for, and the overall budget for async polling.
+const ORANGESLICE_TIMEOUT_MS = 15_000;
+const ORANGESLICE_INLINE_WAIT_MS = 5_000;
+const ORANGESLICE_POLL_TIMEOUT_MS = 30_000;
+const ORANGESLICE_POLL_INTERVAL_MS = 1_500;
+
+// Ocean + predictLeads operation ids (mirrors the SDK's exported constants).
+const OCEAN_SEARCH_COMPANIES = "search-companies";
+const PREDICT_LEADS_JOB_OPENINGS = "company_job_openings";
+const PREDICT_LEADS_FINANCING_EVENTS = "company_financing_events";
 
 export interface Firmographics {
   domain: string;
@@ -37,7 +64,7 @@ export interface Firmographics {
   industry?: string;
   employeeCount?: string;
   location?: string;
-  /** Honest provenance: the enrichment API ("orangeslice") or the HTML fallback. */
+  /** Honest provenance: the Orange Slice enrichment API or the HTML fallback. */
   source: "orangeslice" | "html-fallback";
 }
 
@@ -52,12 +79,12 @@ export interface DiscoveredAccount {
   source: "orangeslice";
 }
 
-/** A decision-maker at a target account. Email is locked behind Fiber reveal. */
+/** A decision-maker at a target account. Email is locked behind a reveal step. */
 export interface DiscoveredPerson {
   name?: string;
   title?: string;
   linkedinUrl?: string;
-  /** Apollo email when unlocked; "" / locked-placeholder is dropped by the caller. */
+  /** Revealed work email when unlocked; locked rows leave this undefined. */
   email?: string;
   emailLocked: boolean;
   location?: string;
@@ -67,77 +94,171 @@ export interface DiscoveredPerson {
 export interface DiscoverCompaniesArgs {
   /** Free-text keywords describing the ICP (industry, category, niche). */
   keywords?: string;
-  /** Apollo employee-range buckets, e.g. ["11,50","51,200"]. */
+  /** Headcount buckets, e.g. ["11,50","51,200"] (Apollo-style) or ["11-50"]. */
   employeeRanges?: string[];
   /** Locations (cities / regions / countries) to bias toward. */
   locations?: string[];
-  /** How many accounts to pull (Apollo per_page; capped at 25). */
+  /** How many accounts to pull (capped at 25). */
   limit?: number;
 }
 
+/** Inputs for a person email reveal via the Orange Slice contact waterfall. */
+export interface RevealContactArgs {
+  linkedinUrl?: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  company?: string;
+  domain?: string;
+}
+
+/** Hiring + funding triggers for a company, via predictLeads. */
+export interface CompanySignals {
+  domain: string;
+  jobOpenings: number;
+  financingEvents: number;
+  latestFinancing?: { round?: string; amount?: string; announcedAt?: string };
+  source: "orangeslice";
+}
+
 // ----------------------------------------------------------------------------
-// Key + low-level POST.
+// Key + low-level transport.
 // ----------------------------------------------------------------------------
+
+// Obvious placeholders we treat as "no key" so a half-configured env degrades
+// gracefully instead of firing authenticated calls that will 401.
+const PLACEHOLDER_KEY_PATTERN = /^(your|placeholder|changeme|example|dummy|test[-_]?key|xxx)/i;
 
 /** Read the key fresh each call so env changes are picked up without restart. */
 function apiKey(): string | undefined {
-  const key = process.env.APOLLOIO_API_KEY?.trim();
-  return key ? key : undefined;
+  const key = process.env.ORANGESLICE_API_KEY?.trim();
+  if (!key) return undefined;
+  if (PLACEHOLDER_KEY_PATTERN.test(key)) return undefined;
+  return key;
 }
 
-/** True when a real Apollo key is configured (callers can choose a path). */
+/** True when a real Orange Slice key is configured (callers can choose a path). */
 export function hasOrangeSliceKey(): boolean {
   return apiKey() !== undefined;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readBody(res: Response): Promise<unknown> {
+  const text = await res.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text;
+  }
+}
+
 /**
- * Single Apollo REST call. Returns the parsed body or `null` on any
- * error/timeout/non-2xx so callers degrade gracefully instead of throwing.
+ * Single Orange Slice gateway POST. Adds the bearer auth + inline wait, follows
+ * the SDK's async polling protocol, and returns the parsed object body — or
+ * `null` on any missing-key / timeout / non-2xx / error-body case so callers
+ * degrade gracefully instead of throwing. Uses safeFetch (SSRF guard + timeout).
  */
-async function apolloPost(
-  path: string,
-  body: Record<string, unknown>,
+async function slicePost(
+  endpoint: string,
+  payload: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
   const key = apiKey();
   if (!key) return null;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), APOLLO_TIMEOUT_MS);
   try {
-    const resp = await fetch(`${APOLLO_BASE_URL}${path}`, {
+    const res = await safeFetch(`${ORANGESLICE_BASE_URL}${endpoint}`, {
       method: "POST",
       headers: {
-        "X-Api-Key": key,
         "Content-Type": "application/json",
         Accept: "application/json",
+        Authorization: `Bearer ${key}`,
       },
-      body: JSON.stringify(body),
-      signal: controller.signal,
+      body: JSON.stringify({ ...payload, inlineWaitMs: ORANGESLICE_INLINE_WAIT_MS }),
+      timeoutMs: ORANGESLICE_TIMEOUT_MS,
     });
-    if (!resp.ok) return null; // rate limit / auth / unknown — degrade silently
-    const data = (await resp.json()) as unknown;
-    return data && typeof data === "object"
-      ? (data as Record<string, unknown>)
-      : null;
+    if (!res.ok) return null;
+
+    const body = await readBody(res);
+    if (isRecord(body) && body.pending === true) {
+      return await pollSliceResult(body);
+    }
+    if (!isRecord(body)) return null;
+    if (typeof body.error === "string") return null; // 2xx carrying an error field
+    return body;
   } catch {
     return null; // network / timeout / bad JSON — never propagate
-  } finally {
-    clearTimeout(timer);
   }
 }
 
+/** Poll /function/result/:requestId (or an explicit pollUrl) until resolved. */
+async function pollSliceResult(
+  pending: Record<string, unknown>,
+): Promise<Record<string, unknown> | null> {
+  const pollPath =
+    typeof pending.pollUrl === "string" && pending.pollUrl.trim().length > 0
+      ? pending.pollUrl
+      : typeof pending.requestId === "string"
+        ? `/function/result/${pending.requestId}`
+        : undefined;
+  if (!pollPath) return null;
+
+  let pollUrl: string;
+  try {
+    pollUrl = new URL(pollPath, `${ORANGESLICE_BASE_URL}/`).toString();
+  } catch {
+    return null;
+  }
+
+  const deadline = Date.now() + ORANGESLICE_POLL_TIMEOUT_MS;
+  let interval =
+    typeof pending.pollAfterMs === "number" && pending.pollAfterMs > 0
+      ? Math.min(pending.pollAfterMs, 3_000)
+      : ORANGESLICE_POLL_INTERVAL_MS;
+
+  while (Date.now() < deadline) {
+    await sleep(interval);
+    try {
+      const res = await safeFetch(pollUrl, {
+        method: "GET",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        timeoutMs: ORANGESLICE_TIMEOUT_MS,
+      });
+      const body = await readBody(res);
+      if (res.status === 202 || (isRecord(body) && body.pending === true)) {
+        if (isRecord(body) && typeof body.pollAfterMs === "number" && body.pollAfterMs > 0) {
+          interval = Math.min(body.pollAfterMs, 3_000);
+        }
+        continue;
+      }
+      if (!res.ok) return null;
+      if (!isRecord(body)) return null;
+      if (typeof body.error === "string") return null;
+      return body;
+    } catch {
+      return null;
+    }
+  }
+  return null; // polling budget exhausted — degrade
+}
+
 // ----------------------------------------------------------------------------
-// Parsing helpers (Apollo nests fields under several names across endpoints).
+// Parsing helpers.
 // ----------------------------------------------------------------------------
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : undefined;
+  return isRecord(value) ? value : undefined;
 }
 
 function firstString(
-  data: Record<string, unknown> | undefined,
+  data: Record<string, unknown> | null | undefined,
   keys: readonly string[],
 ): string | undefined {
   if (!data) return undefined;
@@ -154,6 +275,28 @@ function firstString(
   return undefined;
 }
 
+/** First non-empty string found inside an array-valued field. */
+function firstFromArray(
+  data: Record<string, unknown> | null | undefined,
+  keys: readonly string[],
+): string | undefined {
+  if (!data) return undefined;
+  for (const key of keys) {
+    const value = data[key];
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item === "string" && item.trim()) return item.trim();
+      }
+    }
+  }
+  return undefined;
+}
+
+/** Escape a value for inlining into a single-quoted SQL string literal. */
+function sqlString(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
 /** Normalize raw user input into a bare domain (no scheme, no path, no www). */
 function normalizeDomain(input: string): string {
   let domain = input.trim().toLowerCase();
@@ -163,25 +306,22 @@ function normalizeDomain(input: string): string {
   return domain;
 }
 
-/** Build "City, State" / "City, Country" from Apollo's split location fields. */
-function joinLocation(rec: Record<string, unknown> | undefined): string | undefined {
-  if (!rec) return undefined;
-  const explicit = firstString(rec, ["location", "formatted_address", "hq"]);
-  if (explicit) return explicit;
-  const parts = [
-    firstString(rec, ["city"]),
-    firstString(rec, ["state"]),
-    firstString(rec, ["country"]),
-  ].filter(Boolean);
-  return parts.length > 0 ? parts.join(", ") : undefined;
+/** Build "City, Region, Country" from split location fields. */
+function joinParts(parts: ReadonlyArray<string | undefined>): string | undefined {
+  const filtered = parts.filter((p): p is string => Boolean(p && p.trim()));
+  return filtered.length > 0 ? filtered.join(", ") : undefined;
 }
 
-/** Apollo returns headcount as a number; bucket it into a human range. */
+/** Headcount as a number → a human range bucket. */
 function bucketHeadcount(rec: Record<string, unknown> | undefined): string | undefined {
-  const raw = rec?.["estimated_num_employees"] ?? rec?.["employee_count"];
+  const raw =
+    rec?.["estimated_num_employees"] ??
+    rec?.["employee_count"] ??
+    rec?.["employeeCountLinkedin"] ??
+    rec?.["employeeCountOcean"];
   const n = typeof raw === "number" ? raw : Number(raw);
   if (!Number.isFinite(n) || n <= 0) {
-    return firstString(rec, ["employee_count", "size", "headcount"]);
+    return firstString(rec, ["employee_count", "size", "headcount", "companySize"]);
   }
   if (n <= 10) return "1-10";
   if (n <= 50) return "11-50";
@@ -192,19 +332,8 @@ function bucketHeadcount(rec: Record<string, unknown> | undefined): string | und
   return "5000+";
 }
 
-/** Apollo locks emails for un-revealed people; detect the placeholder. */
-function isLockedEmail(email: string | undefined): boolean {
-  if (!email) return true;
-  const e = email.toLowerCase();
-  return (
-    e.includes("email_not_unlocked") ||
-    e.includes("not_unlocked") ||
-    e === "locked"
-  );
-}
-
 // ----------------------------------------------------------------------------
-// HTML fallback (no key) — documented homepage meta-tag scrape.
+// HTML fallback (no key / no match) — documented homepage meta-tag scrape.
 // ----------------------------------------------------------------------------
 function pickMeta(html: string, patterns: RegExp[]): string | undefined {
   for (const pattern of patterns) {
@@ -241,11 +370,35 @@ async function enrichViaHtml(domain: string): Promise<Firmographics> {
 }
 
 // ----------------------------------------------------------------------------
-// PUBLIC: enrichCompany — REAL firmographics via Apollo org enrich.
+// Company row lookup (b2b LinkedIn firmographics by domain) via /execute/sql.
+// Mirrors the SDK's company.linkedin.enrich domain query, selecting the whole
+// row so callers can read firmographics + the slug/url we need for people.
+// ----------------------------------------------------------------------------
+async function getCompanyRow(domain: string): Promise<Record<string, unknown> | null> {
+  const bare = domain.replace(/^www\./, "");
+  const escaped = bare.replace(/\./g, "\\.");
+  const websiteRegex = `^https?://(www\\.)?${escaped}(/([a-z]{2}(-[a-z]{2})?)?)?(\\?.*)?/?$`;
+  const sql = `SELECT lkd.*
+FROM linkedin_company lc
+JOIN lkd_company lkd ON lkd.linkedin_company_id = lc.id
+WHERE lc.domain IN (${sqlString(bare)}, ${sqlString("www." + bare)})
+ORDER BY CASE WHEN lc.website ~ ${sqlString(websiteRegex)} THEN 0 ELSE 1 END,
+  lc.employee_count DESC NULLS LAST
+LIMIT 1`;
+
+  const data = await slicePost("/execute/sql", { sql });
+  if (!data) return null;
+  const rows = Array.isArray(data["rows"]) ? data["rows"] : [];
+  const first = rows[0];
+  return isRecord(first) ? first : null;
+}
+
+// ----------------------------------------------------------------------------
+// PUBLIC: enrichCompany — REAL firmographics via Orange Slice b2b enrich.
 // ----------------------------------------------------------------------------
 /**
- * Enrich a company domain into firmographics. Prefers the real Apollo
- * `/organizations/enrich` endpoint (labeled `source:"orangeslice"`); otherwise
+ * Enrich a company domain into firmographics. Prefers the real Orange Slice
+ * `/execute/sql` b2b LinkedIn enrich (labeled `source:"orangeslice"`); otherwise
  * falls back to the documented homepage HTML scrape. Never throws.
  */
 export async function enrichCompany(domain: string): Promise<Firmographics> {
@@ -258,73 +411,122 @@ export async function enrichCompany(domain: string): Promise<Firmographics> {
     return enrichViaHtml(normalized);
   }
 
-  const data = await apolloPost("/organizations/enrich", { domain: normalized });
-  const org =
-    asRecord(data?.["organization"]) ?? asRecord(data?.["account"]) ?? data ?? undefined;
-
-  if (!org) {
+  const row = await getCompanyRow(normalized);
+  if (!row) {
     return enrichViaHtml(normalized);
   }
 
-  return {
+  const firmo: Firmographics = {
     domain: normalized,
-    name: firstString(org, ["name", "company_name"]),
-    description: firstString(org, ["short_description", "description", "seo_description"]),
-    industry: firstString(org, ["industry", "sector"]),
-    employeeCount: bucketHeadcount(org),
-    location: joinLocation(org),
+    name: firstString(row, ["name", "company_name"]),
+    description: firstString(row, ["description", "tagline", "summary"]),
+    industry: firstString(row, ["industry", "industry_name"]),
+    employeeCount: bucketHeadcount(row),
+    location: joinParts([
+      firstString(row, ["locality", "city"]),
+      firstString(row, ["region", "state"]),
+      firstString(row, ["country_name", "country", "country_iso"]),
+    ]),
     source: "orangeslice",
   };
+
+  // An essentially-empty row is thinner than a homepage scrape — prefer the scrape.
+  if (!firmo.name && !firmo.description) {
+    return enrichViaHtml(normalized);
+  }
+  return firmo;
 }
 
 // ----------------------------------------------------------------------------
-// PUBLIC: discoverCompanies — REAL ICP → target accounts via Apollo search.
+// PUBLIC: discoverCompanies — REAL ICP → target accounts via Ocean search.
 // ----------------------------------------------------------------------------
+/** Map an Apollo-style "11,50" / "11-50" headcount range to an Ocean bucket. */
+const OCEAN_SIZE_BUCKETS: ReadonlySet<string> = new Set([
+  "0-1",
+  "2-10",
+  "11-50",
+  "51-200",
+  "201-500",
+  "501-1000",
+  "1001-5000",
+  "5001-10000",
+  "10001+",
+]);
+function toOceanSize(range: string): string | undefined {
+  const norm = range.trim().replace(/\s+/g, "").replace(",", "-");
+  return OCEAN_SIZE_BUCKETS.has(norm) ? norm : undefined;
+}
+
 /**
- * Surface real companies matching an ICP via Apollo `/mixed_companies/search`.
- * Returns [] when no key / no match (the sourcer layers its own LLM + seed
- * fallback on top). Never throws.
+ * Surface real companies matching an ICP via Orange Slice Ocean
+ * `/execute/oceanio` (operation `search-companies`). Returns [] when no key /
+ * no match (the sourcer layers its own LLM + seed fallback on top). Never throws.
  */
 export async function discoverCompanies(
   args: DiscoverCompaniesArgs,
 ): Promise<DiscoveredAccount[]> {
   if (!hasOrangeSliceKey()) return [];
 
-  const perPage = Math.max(1, Math.min(25, args.limit ?? 12));
-  const body: Record<string, unknown> = { page: 1, per_page: perPage };
+  const size = Math.max(1, Math.min(25, args.limit ?? 12));
+  const companiesFilters: Record<string, unknown> = {};
+
   if (args.keywords?.trim()) {
-    body.q_organization_keyword_tags = args.keywords
+    const industries = args.keywords
       .split(/[,\n]/)
       .map((s) => s.trim())
       .filter(Boolean)
       .slice(0, 8);
-  }
-  if (args.employeeRanges && args.employeeRanges.length > 0) {
-    body.organization_num_employees_ranges = args.employeeRanges;
+    if (industries.length > 0) companiesFilters.industries = industries;
   }
   if (args.locations && args.locations.length > 0) {
-    body.organization_locations = args.locations;
+    companiesFilters.countries = args.locations;
+  }
+  if (args.employeeRanges && args.employeeRanges.length > 0) {
+    const sizes = args.employeeRanges
+      .map(toOceanSize)
+      .filter((s): s is string => Boolean(s));
+    if (sizes.length > 0) companiesFilters.companySizes = sizes;
   }
 
-  const data = await apolloPost("/mixed_companies/search", body);
-  const raw =
-    (Array.isArray(data?.["organizations"]) && (data!["organizations"] as unknown[])) ||
-    (Array.isArray(data?.["accounts"]) && (data!["accounts"] as unknown[])) ||
-    [];
+  const data = await slicePost("/execute/oceanio", {
+    operationId: OCEAN_SEARCH_COMPANIES,
+    params: { companiesFilters, size },
+  });
+  const matches = Array.isArray(data?.["companies"])
+    ? (data!["companies"] as unknown[])
+    : [];
 
   const accounts: DiscoveredAccount[] = [];
-  for (const item of raw) {
-    const org = asRecord(item);
-    const company = firstString(org, ["name", "company_name"]);
-    if (!company) continue;
-    const rawDomain = firstString(org, ["primary_domain", "website_url", "domain"]);
+  for (const match of matches) {
+    // Ocean wraps each hit as { company: {...}, relevance }; tolerate a flat shape.
+    const company = asRecord(asRecord(match)?.["company"]) ?? asRecord(match);
+    const name = firstString(company, ["name", "legalName"]);
+    if (!name) continue;
+
+    const rawDomain = firstString(company, ["domain", "rootUrl"]);
+    const medias = asRecord(company?.["medias"]);
+    const linkedinMedia = asRecord(medias?.["linkedin"]);
+    const firstLocation = Array.isArray(company?.["locations"])
+      ? asRecord((company!["locations"] as unknown[])[0])
+      : undefined;
+
     accounts.push({
-      company,
+      company: name,
       domain: rawDomain ? normalizeDomain(rawDomain) : undefined,
-      industry: firstString(org, ["industry", "sector"]),
-      employeeCount: bucketHeadcount(org),
-      location: joinLocation(org),
-      linkedinUrl: firstString(org, ["linkedin_url"]),
+      industry:
+        firstString(company, ["linkedinIndustry"]) ??
+        firstFromArray(company, ["industries", "industryCategories"]),
+      employeeCount:
+        firstString(company, ["companySize"]) ?? bucketHeadcount(company),
+      location:
+        joinParts([
+          firstString(firstLocation, ["locality"]),
+          firstString(firstLocation, ["region", "state"]),
+          firstString(firstLocation, ["country"]),
+        ]) ??
+        firstString(company, ["primaryCountry"]) ??
+        firstFromArray(company, ["countries"]),
+      linkedinUrl: firstString(linkedinMedia, ["url"]),
       source: "orangeslice",
     });
   }
@@ -332,13 +534,14 @@ export async function discoverCompanies(
 }
 
 // ----------------------------------------------------------------------------
-// PUBLIC: findPeople — REAL decision-makers at a domain via Apollo people search.
+// PUBLIC: findPeople — REAL decision-makers at a domain via b2b employees.
 // ----------------------------------------------------------------------------
 /**
- * Find decision-makers at a company domain via Apollo `/mixed_people/search`,
- * filtered by titles. Emails are typically LOCKED here (Apollo reveal is a
- * separate paid step) — the caller uses Fiber to obtain a verified work email.
- * Returns [] when no key / no match. Never throws.
+ * Find decision-makers at a company domain via Orange Slice
+ * `/execute/b2b-company-employees`, filtered by title variations. We first
+ * resolve the company's LinkedIn slug/url from the b2b enrich row, then pull its
+ * current employees. Emails are LOCKED here (use revealContactEmail to unlock).
+ * Returns [] when no key / no company match. Never throws.
  */
 export async function findPeople(
   domain: string,
@@ -348,39 +551,156 @@ export async function findPeople(
   const normalized = normalizeDomain(domain);
   if (!normalized || !hasOrangeSliceKey()) return [];
 
-  const body: Record<string, unknown> = {
-    page: 1,
-    per_page: Math.max(1, Math.min(10, limit)),
-    q_organization_domains: normalized,
-  };
-  const cleanTitles = titles.map((t) => t.trim()).filter(Boolean).slice(0, 10);
-  if (cleanTitles.length > 0) body.person_titles = cleanTitles;
+  const row = await getCompanyRow(normalized);
+  const companySlug = firstString(row, ["slug"]);
+  const linkedinUrl = firstString(row, ["linkedin_url", "linkedinUrl"]);
+  if (!companySlug && !linkedinUrl) return [];
 
-  const data = await apolloPost("/mixed_people/search", body);
-  const raw =
-    (Array.isArray(data?.["people"]) && (data!["people"] as unknown[])) ||
-    (Array.isArray(data?.["contacts"]) && (data!["contacts"] as unknown[])) ||
-    [];
+  const cleanTitles = titles.map((t) => t.trim()).filter(Boolean).slice(0, 10);
+  const payload: Record<string, unknown> = {
+    limit: Math.max(1, Math.min(25, limit)),
+    onlyCurrent: true,
+  };
+  if (companySlug) payload.companySlug = companySlug;
+  if (linkedinUrl) payload.linkedinUrl = linkedinUrl;
+  if (cleanTitles.length > 0) payload.titleVariations = cleanTitles;
+
+  const data = await slicePost("/execute/b2b-company-employees", payload);
+  const employees = Array.isArray(data?.["employees"])
+    ? (data!["employees"] as unknown[])
+    : [];
 
   const people: DiscoveredPerson[] = [];
-  for (const item of raw) {
-    const person = asRecord(item);
+  for (const item of employees) {
+    const e = asRecord(item);
+    if (!e) continue;
     const name =
-      firstString(person, ["name"]) ??
-      ([firstString(person, ["first_name"]), firstString(person, ["last_name"])]
+      firstString(e, ["lp_formatted_name"]) ??
+      ([firstString(e, ["lp_first_name"]), firstString(e, ["lp_last_name"])]
         .filter(Boolean)
         .join(" ") ||
         undefined);
-    const email = firstString(person, ["email"]);
     people.push({
       name: name || undefined,
-      title: firstString(person, ["title", "headline"]),
-      linkedinUrl: firstString(person, ["linkedin_url"]),
-      email: isLockedEmail(email) ? undefined : email,
-      emailLocked: isLockedEmail(email),
-      location: joinLocation(person),
+      title: firstString(e, ["lp_title", "lp_headline"]),
+      linkedinUrl: firstString(e, ["lp_public_profile_url"]),
+      email: undefined,
+      emailLocked: true, // b2b people search never reveals — see revealContactEmail
+      location: firstString(e, ["lp_location_name"]),
       source: "orangeslice",
     });
   }
   return people;
+}
+
+// ----------------------------------------------------------------------------
+// PUBLIC: revealContactEmail — REAL work-email reveal via contact waterfall.
+// ----------------------------------------------------------------------------
+/**
+ * Reveal a verified work email for a person via Orange Slice
+ * `/execute/contact-waterfall` (person.contact.get). Prefers a work email,
+ * falls back to a personal email, and returns `null` when no key / no match.
+ * Never throws.
+ */
+export async function revealContactEmail(args: RevealContactArgs): Promise<string | null> {
+  if (!hasOrangeSliceKey()) return null;
+
+  let firstName = args.firstName?.trim();
+  let lastName = args.lastName?.trim();
+  if (!firstName && args.name?.trim()) {
+    const parts = args.name.trim().split(/\s+/);
+    firstName = parts[0];
+    lastName = parts.slice(1).join(" ") || undefined;
+  }
+
+  // Need at least a LinkedIn URL or a (name + domain) to anchor the lookup.
+  if (!args.linkedinUrl && !(firstName && args.domain)) return null;
+
+  const payload: Record<string, unknown> = { required: ["work_email"] };
+  if (args.linkedinUrl) payload.linkedinUrl = args.linkedinUrl;
+  if (firstName) payload.firstName = firstName;
+  if (lastName) payload.lastName = lastName;
+  if (args.company) payload.company = args.company;
+  if (args.domain) payload.domain = normalizeDomain(args.domain);
+
+  const data = await slicePost("/execute/contact-waterfall", payload);
+  if (!data) return null;
+
+  for (const key of ["work_emails", "personal_emails"] as const) {
+    const emails = Array.isArray(data[key]) ? (data[key] as unknown[]) : [];
+    for (const candidate of emails) {
+      if (typeof candidate === "string" && candidate.includes("@")) {
+        return candidate.trim();
+      }
+    }
+  }
+  return null;
+}
+
+// ----------------------------------------------------------------------------
+// PUBLIC: fetchCompanySignals — REAL hiring/funding triggers via predictLeads.
+// ----------------------------------------------------------------------------
+/** Count the items in a predictLeads-style `{ data: [...] }` response. */
+function predictLeadsCount(data: Record<string, unknown> | null): number {
+  if (!data) return 0;
+  const arr =
+    data["data"] ?? data["results"] ?? data["job_openings"] ?? data["financing_events"];
+  return Array.isArray(arr) ? arr.length : 0;
+}
+
+/** First item's attributes from a predictLeads-style `{ data: [...] }` response. */
+function predictLeadsFirstAttributes(
+  data: Record<string, unknown> | null,
+): Record<string, unknown> | undefined {
+  if (!data) return undefined;
+  const arr = data["data"] ?? data["results"] ?? data["financing_events"];
+  if (Array.isArray(arr) && isRecord(arr[0])) {
+    return asRecord(arr[0]["attributes"]) ?? asRecord(arr[0]);
+  }
+  return undefined;
+}
+
+/**
+ * Fetch hiring + funding signals for a company via Orange Slice
+ * `/execute/predictleads` (operations `company_job_openings` +
+ * `company_financing_events`). Returns `null` when no key / nothing resolved.
+ * The predictLeads response shape is best-effort parsed. Never throws.
+ */
+export async function fetchCompanySignals(domain: string): Promise<CompanySignals | null> {
+  const normalized = normalizeDomain(domain);
+  if (!normalized || !hasOrangeSliceKey()) return null;
+
+  const [jobsData, financingData] = await Promise.all([
+    slicePost("/execute/predictleads", {
+      operationId: PREDICT_LEADS_JOB_OPENINGS,
+      params: { domain: normalized },
+    }),
+    slicePost("/execute/predictleads", {
+      operationId: PREDICT_LEADS_FINANCING_EVENTS,
+      params: { domain: normalized },
+    }),
+  ]);
+
+  if (!jobsData && !financingData) return null;
+
+  const attrs = predictLeadsFirstAttributes(financingData);
+  const latestFinancing = attrs
+    ? {
+        round: firstString(attrs, ["round_type", "round", "type"]),
+        amount: firstString(attrs, ["amount", "amount_normalized", "raised"]),
+        announcedAt: firstString(attrs, ["announced_date", "date", "happened_at"]),
+      }
+    : undefined;
+
+  return {
+    domain: normalized,
+    jobOpenings: predictLeadsCount(jobsData),
+    financingEvents: predictLeadsCount(financingData),
+    latestFinancing:
+      latestFinancing &&
+      (latestFinancing.round || latestFinancing.amount || latestFinancing.announcedAt)
+        ? latestFinancing
+        : undefined,
+    source: "orangeslice",
+  };
 }

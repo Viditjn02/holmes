@@ -22,6 +22,7 @@
     "finderx": "^1.1.5",
     "next": "15.1.3",
     "openai": "^4.77.0",
+    "orangeslice": "^2.6.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-resizable-panels": "^2.1.9",
