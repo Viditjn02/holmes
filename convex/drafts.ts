@@ -28,6 +28,24 @@ export const setStatus = mutation({
     if (!draft) {
       throw new Error(`setStatus: draft ${draftId} not found`);
     }
+    // State-machine guard: a draft can only move awaiting_approval -> approved|rejected,
+    // then approved -> posted. Blocks re-flipping terminal drafts or skipping the gate.
+    //
+    // SECURITY (no-auth demo): this mutation is PUBLIC and has no ownership check, so
+    // it is an IDOR by design for the single-tenant hackathon build — there are no
+    // users/tenants, and the approval gate is a UX control, not a security boundary.
+    // Production MUST authenticate the caller and verify they own draft.runId here.
+    const allowedTransitions: Record<string, ReadonlyArray<string>> = {
+      awaiting_approval: ["approved", "rejected"],
+      approved: ["posted"],
+      rejected: [],
+      posted: [],
+    };
+    if (!allowedTransitions[draft.status]?.includes(status)) {
+      throw new Error(
+        `setStatus: illegal transition ${draft.status} -> ${status}`,
+      );
+    }
     await ctx.db.patch(draftId, { status });
     return { draftId, status };
   },
