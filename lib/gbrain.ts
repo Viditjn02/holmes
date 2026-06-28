@@ -109,7 +109,7 @@ export function brainQuery(question: string): Promise<BrainQueryResult> {
     try {
       execFile(
         bin,
-        ["query", trimmed],
+        ["query", safeQuestion],
         {
           timeout: QUERY_TIMEOUT_MS,
           maxBuffer: MAX_OUTPUT_BYTES,

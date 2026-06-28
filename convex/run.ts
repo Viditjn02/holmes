@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { internalAction, internalMutation } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { AGENTS } from "../lib/contract";
 import { upsertBrief } from "./brief";
 
@@ -19,22 +19,26 @@ import { upsertBrief } from "./brief";
 // the deadline. It never touches communities/threads/drafts/creatives.
 // ============================================================================
 
-// The five board agents (per the frozen contract). `reply` runs in the swarm
+// The seven board agents (per the frozen contract). `reply` runs in the swarm
 // too but is NOT a board row — it silently drafts in-thread replies off the
 // threads the detective found.
 const BOARD_AGENTS: ReadonlySet<string> = new Set<string>(AGENTS);
 
 // Execution plan. Router first (it resolves the canonical domain + persists it
 // onto the run), THEN enrich (which scrapes that domain instead of the raw
-// input), then the detective (the moat — needs enrich context), then the three
-// independent consumers in parallel. `reply` reads threads; `creative` builds
-// the Veo ad; `watcher` tears down a competitor reel (if one is configured).
-// Promise.allSettled means one straggler never blocks the others.
+// input). Once the company is known we fan out the detective (the moat — needs
+// enrich context) alongside `adscout` (competitor ad intel from the Meta Ad
+// Library — needs the resolved company). The final phase runs the consumers
+// that depend on the detective's threads: `reply` drafts in-thread replies,
+// `creative` builds the Veo ad, `designer` builds the landing page + ad copy
+// from the brief + buyer language, and `watcher` tears down a competitor reel
+// (if one is configured). Promise.allSettled means one straggler never blocks
+// the others.
 const PHASES: ReadonlyArray<ReadonlyArray<string>> = [
   ["router"],
   ["enrich"],
-  ["detective"],
-  ["reply", "creative", "watcher"],
+  ["detective", "adscout"],
+  ["reply", "creative", "watcher", "designer"],
 ];
 
 // Optional competitor reel for the watcher to tear down. There is no per-run
@@ -72,11 +76,27 @@ function agentRunRef(name: string): unknown {
  */
 async function runAgent(
   ctx: ActionCtx,
-  runId: Id<"runs">,
+  run: Doc<"runs">,
   name: string,
 ): Promise<void> {
+  const runId: Id<"runs"> = run._id;
   const isBoard = BOARD_AGENTS.has(name);
   const extraArgs = agentArgs(name);
+
+  // Honor skipVideo: a 24/7 monitor tick spawns the run with skipVideo=true so
+  // the background swarm never burns Veo credits. Mark the creative lane
+  // honestly "skipped" rather than rendering (or pretending it's "done").
+  if (name === "creative" && run.skipVideo === true) {
+    if (isBoard) {
+      await ctx.runMutation(internal.runs.setAgentStatus, {
+        runId,
+        agent: name,
+        status: "skipped",
+        note: "video skipped on 24/7 monitor tick",
+      });
+    }
+    return;
+  }
 
   // The watcher only does real work given a competitor reel. With none, marking
   // it "done" would misrepresent an idle agent, so we mark it honestly skipped.
@@ -146,7 +166,7 @@ export const orchestrate = internalAction({
     try {
       for (const phase of PHASES) {
         await Promise.allSettled(
-          phase.map((name) => runAgent(ctx, runId, name)),
+          phase.map((name) => runAgent(ctx, run, name)),
         );
       }
     } finally {

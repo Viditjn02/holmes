@@ -44,8 +44,12 @@ export const createRun = mutation({
     input: v.string(),
     inputType: inputTypeValidator,
     replay: v.optional(v.boolean()),
+    // Set when this run was spawned by a 24/7 monitor tick (convex/monitor.ts).
+    monitorId: v.optional(v.id("monitors")),
+    // Background monitor ticks skip the Veo render so they don't burn credits.
+    skipVideo: v.optional(v.boolean()),
   },
-  handler: async (ctx, { input, inputType, replay }) => {
+  handler: async (ctx, { input, inputType, replay, monitorId, skipVideo }) => {
     const trimmed = input.trim();
     if (trimmed.length === 0) {
       throw new Error("createRun: input must not be empty");
@@ -59,6 +63,8 @@ export const createRun = mutation({
       startedAt: now,
       deadlineAt: now + FANIN_DEADLINE_MS,
       replay: replay ?? false,
+      monitorId,
+      skipVideo,
     });
 
     // One board row per agent, queued. The orchestrator flips these.

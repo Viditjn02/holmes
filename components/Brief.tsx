@@ -7,6 +7,9 @@ import type { Doc, Id } from "@/convex/_generated/dataModel";
 import ThreadCard from "./ThreadCard";
 import ApprovalModal from "./ApprovalModal";
 import CreativePanel from "./CreativePanel";
+import CompetitorAds from "./CompetitorAds";
+import DesignPanel from "./DesignPanel";
+import BrainPanel from "./BrainPanel";
 
 // ============================================================================
 // Brief — the rendered GTM brief for a run.
@@ -32,10 +35,15 @@ function SkeletonLine({ w }: { w: string }) {
 }
 
 export default function Brief({ runId }: BriefProps) {
+  const run = useQuery(api.runs.getRun, { runId });
   const brief = useQuery(api.brief.getBrief, { runId });
   const communities = useQuery(api.brief.getCommunities, { runId });
   const threads = useQuery(api.brief.getThreads, { runId });
   const drafts = useQuery(api.brief.getDrafts, { runId });
+
+  // The market subject for the compounding-knowledge panel: the router-resolved
+  // company, else the raw input. BrainPanel renders nothing when it's empty.
+  const company = run?.company ?? run?.input ?? "";
 
   const [activeDraftId, setActiveDraftId] = useState<Id<"drafts"> | null>(null);
 
@@ -93,6 +101,10 @@ export default function Brief({ runId }: BriefProps) {
           <p className="text-sm text-zinc-500">Building the brief…</p>
         )}
       </section>
+
+      {/* ───────────────── Compounding market knowledge ───────────────── */}
+      {/* Renders only when the brain already knows something about this market. */}
+      <BrainPanel company={company} />
 
       {/* ───────────────── Communities ───────────────── */}
       {communities && communities.length > 0 && (
@@ -160,6 +172,10 @@ export default function Brief({ runId }: BriefProps) {
           </div>
         )}
       </section>
+
+      {/* ───────────────── AI Ad Factories — competitor intel + generated assets ───────────────── */}
+      <CompetitorAds runId={runId} />
+      <DesignPanel runId={runId} />
 
       {/* ───────────────── Creative ───────────────── */}
       <CreativePanel runId={runId} />

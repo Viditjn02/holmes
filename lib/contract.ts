@@ -2,7 +2,15 @@
 // INTERCEPT — SHARED TYPE CONTRACT (imported by agents, orchestrator, frontend)
 // ============================================================================
 
-export const AGENTS = ["router", "enrich", "detective", "creative", "watcher"] as const;
+export const AGENTS = [
+  "router",
+  "enrich",
+  "detective",
+  "creative",
+  "watcher",
+  "adscout",
+  "designer",
+] as const;
 export type AgentName = (typeof AGENTS)[number];
 
 export type IntentLabel = "browsing" | "comparing" | "frustrated" | "ready_to_buy";

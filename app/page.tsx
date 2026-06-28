@@ -6,6 +6,8 @@ import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import SwarmBoard from "@/components/SwarmBoard";
 import Brief from "@/components/Brief";
+import MonitorPanel from "@/components/MonitorPanel";
+import LiveMetrics from "@/components/LiveMetrics";
 
 const EXAMPLES = [
   "https://linear.app",
@@ -162,6 +164,26 @@ export default function Home() {
       {runId && (
         <div className="mt-8 flex flex-col gap-8 pb-16">
           <SwarmBoard runId={runId} />
+
+          {/* 24/7 Monitors — autonomous discovery + the live analytics beat. */}
+          <section>
+            <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold tracking-tight">
+                  24/7 Monitors
+                </h2>
+                <p className="text-sm text-white/45">
+                  Stand up an autonomous watch — every new buyer still lands in
+                  your approval queue.
+                </p>
+              </div>
+            </div>
+            <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+              <MonitorPanel />
+              <LiveMetrics runId={runId} />
+            </div>
+          </section>
+
           <Brief runId={runId} />
         </div>
       )}

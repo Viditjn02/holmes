@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactElement } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -38,7 +39,7 @@ interface RunDoc {
 // ----------------------------------------------------------------------------
 const AGENT_META: Record<
   AgentName,
-  { label: string; tagline: string; icon: JSX.Element }
+  { label: string; tagline: string; icon: ReactElement }
 > = {
   router: {
     label: "Router",
@@ -122,6 +123,49 @@ const AGENT_META: Record<
           strokeLinejoin="round"
         />
         <circle cx="12" cy="12" r="2.6" stroke="currentColor" strokeWidth="1.6" />
+      </svg>
+    ),
+  },
+  adscout: {
+    label: "Ad Scout",
+    tagline: "Scouting winning competitor ads",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
+        <path
+          d="M4 9v6h3l5 4V5L7 9H4Z"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M16.5 9a4 4 0 0 1 0 6"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      </svg>
+    ),
+  },
+  designer: {
+    label: "Designer",
+    tagline: "Designing the landing page + ad copy",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" className="h-5 w-5">
+        <rect
+          x="3.5"
+          y="3.5"
+          width="17"
+          height="17"
+          rx="3"
+          stroke="currentColor"
+          strokeWidth="1.6"
+        />
+        <path
+          d="M8 8h5M8 12h8M8 16h6"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
       </svg>
     ),
   },
@@ -366,7 +410,7 @@ export default function SwarmBoard({ runId }: { runId: Id<"runs"> }) {
         />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7">
         {AGENTS.map((agent, i) => {
           const row = byAgent.get(agent);
           return (

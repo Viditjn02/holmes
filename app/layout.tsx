@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
+import PostHogProvider from "@/components/PostHogProvider";
 
 export const metadata: Metadata = {
   title: "INTERCEPT — find the live conversations your buyers are having",
@@ -22,7 +23,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <ConvexClientProvider>{children}</ConvexClientProvider>
+        <ConvexClientProvider>
+          <PostHogProvider>{children}</PostHogProvider>
+        </ConvexClientProvider>
       </body>
     </html>
   );

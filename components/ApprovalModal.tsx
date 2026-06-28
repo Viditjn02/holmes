@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc } from "@/convex/_generated/dataModel";
+import { OutreachButton } from "@/components/OutreachButton";
 
 // ============================================================================
 // ApprovalModal — the human-in-the-loop gate.
@@ -153,12 +154,17 @@ export default function ApprovalModal({ draft, thread, onClose }: ApprovalModalP
         </div>
 
         {/* Actions */}
-        <footer className="flex items-center justify-end gap-3 border-t border-line px-6 py-4">
-          {decided ? (
-            <span className="mr-auto text-sm text-zinc-400">
-              Already {draft.status.replace("_", " ")}.
-            </span>
-          ) : null}
+        <footer className="flex flex-wrap items-center justify-end gap-3 border-t border-line px-6 py-4">
+          <div className="mr-auto flex items-center gap-3">
+            {decided ? (
+              <span className="text-sm text-zinc-400">
+                Already {draft.status.replace("_", " ")}.
+              </span>
+            ) : null}
+            {/* Send the human-approved reply via AgentMail. Self-gates: stays
+                disabled until the draft is approved, no-ops if unconfigured. */}
+            <OutreachButton draftId={draft._id} />
+          </div>
           <button
             type="button"
             onClick={() => act("rejected")}

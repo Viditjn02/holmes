@@ -24,11 +24,10 @@ import type { Doc, Id } from "./_generated/dataModel";
 // result is explicitly typed (Convex circular inference -> deploy fails
 // otherwise).
 //
-// INTEGRATOR NOTE: extend api.runs.createRun to accept optional
-// { monitorId, skipVideo } and have the orchestrator skip the creative/Veo
-// agent when skipVideo is set, so background ticks don't burn Veo credits. Once
-// that lands, pass `skipVideo: true` + `monitorId: monitor._id` from tick (the
-// call site is marked below).
+// Wiring: api.runs.createRun accepts optional { monitorId, skipVideo }; the
+// orchestrator (convex/run.ts) skips the creative/Veo agent when skipVideo is
+// set, so background ticks never burn Veo credits. tick passes `skipVideo: true`
+// + `monitorId: monitor._id` at the call site below.
 // ============================================================================
 
 // Mirrors schema runs.inputType / monitors.inputType. Validated at the boundary.
@@ -168,12 +167,13 @@ export const tick = internalAction({
       if (now < dueAt) continue;
 
       try {
-        // Spawn a normal run. INTEGRATOR: once api.runs.createRun accepts
-        // { monitorId, skipVideo }, add `monitorId: monitor._id` and
-        // `skipVideo: true` here so background ticks don't burn Veo credits.
+        // Spawn a normal run, tagged to this monitor and with skipVideo set so
+        // the background swarm skips the Veo/creative lane (no burned credits).
         const runId: Id<"runs"> = await ctx.runMutation(api.runs.createRun, {
           input: monitor.input,
           inputType: monitor.inputType,
+          monitorId: monitor._id,
+          skipVideo: true,
         });
 
         // Explicitly typed (void) — same-module runMutation.
