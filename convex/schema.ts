@@ -2,25 +2,120 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 // ============================================================================
-// INTERCEPT — FROZEN SCHEMA CONTRACT
-// Every package builds against this. Do not change field shapes without telling
-// the integrator (P1). The frontend, the orchestrator, and the agents all read
-// and write these tables. The live swarm board is driven by `agentStatus`; the
-// moat is `threads` (real, clickable, intent-scored live conversations).
+// INTERCEPT — UNIFIED PLATFORM · FROZEN SCHEMA CONTRACT
+// ----------------------------------------------------------------------------
+// ONE AI-native chat. You paste/type anything; the ROUTER classifies intent and
+// spawns a RUN (a swarm cycle) on the existing orchestrator. The chat replies
+// conversationally on the LEFT; the live CANVAS on the RIGHT subscribes to these
+// tables and lights up as the swarm works.
+//
+// All four capability surfaces write into ONE data model:
+//   • CHAT        conversations · messages            (the centerpiece)
+//   • ORCHESTRATE runs · agentStatus · events          (the live swarm board)
+//   • DISCOVERY   communities · threads · drafts · brief (the moat — Exa/HN/Reddit)
+//   • OUTBOUND    campaigns · prospects · emails        (OrangeSlice + Fiber + AgentMail)
+//   • CONTENT     creatives · designs                   (Veo/fal video + landing)
+//   • COMPETITOR  ads                                   (Meta Ad Library)
+//
+// CONVEX RULES (deploy-safety, do NOT violate):
+//   - This module is NOT "use node" (schema never is).
+//   - Every field that may be absent is OPTIONAL so a thin agent result still
+//     renders. Nothing throws on missing data — the pipeline degrades, never blocks.
+//   - `messages` is the CHAT table. The OUTBOUND email sequence lives in `emails`
+//     (renamed to avoid the table-name collision). The two are distinct surfaces.
+//   - `monitors` is GONE: the 24/7 watch is now an ACTIVE `campaign` (the cron
+//     walks campaigns where status === "active").
+//
+// Keep this in lockstep with lib/contract.ts (the unions here MIRROR the TS types
+// there). Changing a field shape is a contract change — tell every builder.
 // ============================================================================
 
+// A real, recent buying trigger attached to a prospect/thread. The moat: outreach
+// is grounded in THIS signal, not a generic template. Optional everywhere because
+// the sourcer may surface a lead before the enricher finds a fresh trigger.
+const signalValidator = v.object({
+  type: v.union(
+    v.literal("funding"),
+    v.literal("hiring"),
+    v.literal("news"),
+    v.literal("post"),
+    v.literal("job_change"),
+    v.literal("tech"),
+    v.literal("other"),
+  ),
+  summary: v.string(), // one-line human-readable trigger
+  url: v.optional(v.string()), // REAL clickable source — verifiable in one tap
+  source: v.optional(v.string()), // e.g. "techcrunch.com", "linkedin", "exa"
+  foundAt: v.number(),
+});
+
+// Raw shape of the input the router classified (kept for enrich/router compat).
+const inputTypeValidator = v.union(
+  v.literal("url"),
+  v.literal("name"),
+  v.literal("competitor"),
+  v.literal("community"),
+  v.literal("text"),
+);
+
+// The capability a run executes. The router maps a chat message to exactly one.
+// (Mirrors lib/contract.ts Intent / CAPABILITY_PLANS.) "analyze" is the default
+// full-swarm sweep when the user just pastes a company with no specific ask.
+const intentValidator = v.union(
+  v.literal("analyze"), // full sweep: discovery + competitor + content
+  v.literal("discovery"), // community/thread intent radar (the moat)
+  v.literal("outbound"), // find companies + decision-makers + draft emails
+  v.literal("outreach"), // act: send / follow-up approved drafts
+  v.literal("content"), // video ad + landing page + ad copy
+  v.literal("competitor"), // Meta Ad Library winning-ad intel
+);
+
 export default defineSchema({
-  // One GTM run. The fan-in renders the brief from whatever completed before
-  // deadlineAt, then flips status -> "complete" (or "partial").
+  // ==========================================================================
+  // CHAT — the centerpiece. One conversation, a stream of messages. A user
+  // message is classified by the router; the assistant message it produces may
+  // carry a `runId` linking it to the swarm cycle whose canvas renders beside it.
+  // ==========================================================================
+  conversations: defineTable({
+    title: v.string(), // short auto-title from the first message
+    lastIntent: v.optional(v.string()), // last routed capability (for the header)
+    createdAt: v.number(),
+    lastMessageAt: v.number(),
+  }).index("by_recent", ["lastMessageAt"]),
+
+  messages: defineTable({
+    conversationId: v.id("conversations"),
+    role: v.union(v.literal("user"), v.literal("assistant"), v.literal("system")),
+    content: v.string(), // final, persisted text (authoritative once streaming ends)
+    // persistent-text-streaming StreamId — present only WHILE the assistant
+    // message is streaming; the live token feed is read over the HTTP action and
+    // handed off to `content` on completion.
+    streamId: v.optional(v.string()),
+    isStreaming: v.optional(v.boolean()),
+    // The swarm cycle this message spawned (assistant messages that DID work).
+    runId: v.optional(v.id("runs")),
+    intent: v.optional(v.string()), // routed capability for this turn
+    // True when posted proactively by the 24/7 cron ("overnight I found 3 …").
+    proactive: v.optional(v.boolean()),
+    createdAt: v.number(),
+  }).index("by_conversation", ["conversationId"]),
+
+  // ==========================================================================
+  // ORCHESTRATION — one RUN is one capability execution (a swarm cycle). It owns
+  // the hard fan-in deadline so the board always settles. Reused, adapted from the
+  // previous build: `agentStatus` drives the live tiles verbatim.
+  // ==========================================================================
   runs: defineTable({
-    input: v.string(),
-    inputType: v.union(
-      v.literal("url"),
-      v.literal("name"),
-      v.literal("competitor"),
-      v.literal("community"),
-      v.literal("text"),
-    ),
+    // Provenance: which conversation/message/campaign spawned this run.
+    conversationId: v.optional(v.id("conversations")),
+    messageId: v.optional(v.id("messages")), // the assistant message to attach results to
+    campaignId: v.optional(v.id("campaigns")), // set for outbound + 24/7 runs
+
+    input: v.string(), // the raw user input / subject the swarm runs against
+    inputType: inputTypeValidator,
+    intent: intentValidator, // the capability this run executes
+    trigger: v.union(v.literal("manual"), v.literal("chat"), v.literal("cron")),
+
     status: v.union(
       v.literal("running"),
       v.literal("complete"),
@@ -28,22 +123,28 @@ export default defineSchema({
       v.literal("failed"),
     ),
     startedAt: v.number(),
-    deadlineAt: v.number(), // hard fan-in deadline (startedAt + ~90s)
-    company: v.optional(v.string()),
-    // Canonical apex domain resolved by the router (e.g. "superhuman.com"), so
-    // enrich scrapes the real homepage instead of "https://<raw input>".
-    routedDomain: v.optional(v.string()),
-    replay: v.boolean(), // deterministic demo mode (cached fixture)
-    monitorId: v.optional(v.id("monitors")), // set when this run came from a 24/7 monitor tick
-    skipVideo: v.optional(v.boolean()), // background ticks skip Veo to save credits
+    deadlineAt: v.number(), // hard fan-in cap (startedAt + FANIN_DEADLINE_MS)
+
+    company: v.optional(v.string()), // resolved by the router/enrich
+    routedDomain: v.optional(v.string()), // canonical apex domain to scrape
+    replay: v.optional(v.boolean()), // deterministic demo mode (cached fixture)
+    skipVideo: v.optional(v.boolean()), // 24/7 ticks skip Veo to save credits
+
+    // Roll-up counters for the board summary (best-effort, written by agents).
+    sourcedCount: v.optional(v.number()),
+    qualifiedCount: v.optional(v.number()),
+    contactedCount: v.optional(v.number()),
   })
     .index("by_status", ["status"])
-    .index("by_monitor", ["monitorId"]),
+    .index("by_conversation", ["conversationId"])
+    .index("by_campaign", ["campaignId"]),
 
-  // Drives the live swarm board. One row per agent per run.
+  // Drives the live swarm board. One row per agent per run. Reused VERBATIM — the
+  // orchestrator (convex/run.ts) owns these transitions. `agent` is a free string
+  // so each intent's plan can use a different roster (see lib/contract.ts AGENTS).
   agentStatus: defineTable({
     runId: v.id("runs"),
-    agent: v.string(), // router | enrich | detective | creative | watcher
+    agent: v.string(),
     status: v.union(
       v.literal("queued"),
       v.literal("running"),
@@ -56,6 +157,133 @@ export default defineSchema({
     finishedAt: v.optional(v.number()),
   }).index("by_run", ["runId"]),
 
+  // A lightweight activity feed for the canvas live ticker. Agents append one line
+  // per meaningful action so the UI shows the swarm "working" without coupling to
+  // internal agent state. Also the substrate for proactive chat (cron summarizes
+  // these into a `messages` row). Purely additive/optional.
+  events: defineTable({
+    conversationId: v.optional(v.id("conversations")),
+    runId: v.optional(v.id("runs")),
+    campaignId: v.optional(v.id("campaigns")),
+    prospectId: v.optional(v.id("prospects")),
+    agent: v.optional(v.string()),
+    kind: v.string(), // sourced | enriched | qualified | drafted | sent | replied | found | …
+    message: v.string(), // human-readable feed line
+    createdAt: v.number(),
+  })
+    .index("by_run", ["runId"])
+    .index("by_conversation", ["conversationId"]),
+
+  // ==========================================================================
+  // OUTBOUND — REAL OrangeSlice firmographics + Fiber verified emails + AgentMail.
+  // A `campaign` is the standing instruction ("run outbound for <company>") AND
+  // the 24/7 monitor: the cron spawns a fresh run for every ACTIVE campaign whose
+  // cadence has elapsed. This replaces the old `monitors` table entirely.
+  // ==========================================================================
+  campaigns: defineTable({
+    conversationId: v.optional(v.id("conversations")), // the chat that created it
+    company: v.string(), // the seller (the user's own company)
+    domain: v.optional(v.string()),
+    description: v.optional(v.string()),
+    icp: v.string(), // ideal customer profile, free text
+    positioning: v.optional(v.string()),
+    personas: v.optional(v.array(v.string())), // target titles, e.g. ["Head of Growth"]
+    valueProp: v.optional(v.string()),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("active"), // active === the 24/7 watch is on
+      v.literal("paused"),
+      v.literal("archived"),
+    ),
+    // review = every send waits in the human-approval queue (default).
+    // autopilot = the sender ships approved-quality drafts itself.
+    autonomy: v.union(v.literal("review"), v.literal("autopilot")),
+    cadenceMinutes: v.optional(v.number()), // how often the cron re-sources
+    lastRunAt: v.optional(v.number()),
+    lastRunId: v.optional(v.id("runs")),
+    createdAt: v.number(),
+  }).index("by_status", ["status"]),
+
+  // A sourced decision-maker (company + person), moved through the pipeline stage
+  // by stage. The canvas pipeline/kanban reads these. Firmographics from
+  // OrangeSlice; verified email from Fiber (emailVerified === Fiber confirmed it).
+  prospects: defineTable({
+    campaignId: v.optional(v.id("campaigns")),
+    runId: v.optional(v.id("runs")), // the swarm cycle that sourced it
+    // Company (target account)
+    company: v.string(),
+    domain: v.optional(v.string()),
+    industry: v.optional(v.string()),
+    employeeCount: v.optional(v.string()),
+    location: v.optional(v.string()),
+    // Decision-maker
+    name: v.optional(v.string()),
+    title: v.optional(v.string()),
+    email: v.optional(v.string()),
+    emailVerified: v.optional(v.boolean()), // true ONLY when Fiber verified it
+    linkedinUrl: v.optional(v.string()),
+    // The warm trigger the outreach is grounded in (enricher/sourcer fills this).
+    signal: v.optional(signalValidator),
+    // Qualification
+    fitScore: v.optional(v.number()), // 0-100
+    fitReason: v.optional(v.string()),
+    stage: v.union(
+      v.literal("sourced"),
+      v.literal("enriched"),
+      v.literal("qualified"),
+      v.literal("contacted"),
+      v.literal("replied"),
+      v.literal("booked"),
+      v.literal("skipped"),
+    ),
+    skipReason: v.optional(v.string()),
+    // Where the row's data came from, for honest provenance badges in the UI.
+    source: v.optional(v.string()), // orangeslice | fiber | exa | html-fallback
+    updatedAt: v.number(),
+  })
+    .index("by_campaign", ["campaignId"])
+    .index("by_run", ["runId"])
+    .index("by_stage", ["campaignId", "stage"]),
+
+  // The OUTBOUND email sequence (distinct from chat `messages`). `step` 0 is the
+  // first touch; 1+ are follow-ups. Gated: the writer only ever creates "draft"; a
+  // human (or autopilot) moves it to "approved"; ONLY the sender moves
+  // "approved" -> "sent" via AgentMail. Replies land back here as "replied".
+  emails: defineTable({
+    campaignId: v.optional(v.id("campaigns")),
+    prospectId: v.id("prospects"),
+    runId: v.optional(v.id("runs")),
+    step: v.number(), // 0 = initial, 1.. = follow-up index
+    kind: v.union(v.literal("initial"), v.literal("followup")),
+    subject: v.string(),
+    body: v.string(),
+    signalRef: v.optional(v.string()), // the signal summary the copy is grounded in
+    to: v.optional(v.string()), // recipient at send time
+    status: v.union(
+      v.literal("draft"),
+      v.literal("approved"),
+      v.literal("sent"),
+      v.literal("replied"),
+      v.literal("bounced"),
+      v.literal("skipped"),
+    ),
+    sentAt: v.optional(v.number()),
+    replyBody: v.optional(v.string()),
+    repliedAt: v.optional(v.number()),
+    // AgentMail correlation ids (lib/agentmail send result).
+    agentmailId: v.optional(v.string()),
+    agentmailThreadId: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index("by_prospect", ["prospectId"])
+    .index("by_campaign", ["campaignId"])
+    .index("by_status", ["status"]),
+
+  // ==========================================================================
+  // DISCOVERY (THE MOAT) — real, clickable, intent-scored LIVE conversations.
+  // Detective agent (Exa, with the free HN Algolia / Reddit JSON fallback) writes
+  // these. Kept VERBATIM from the green build, including the vector index.
+  // ==========================================================================
   communities: defineTable({
     runId: v.id("runs"),
     name: v.string(),
@@ -64,7 +292,6 @@ export default defineSchema({
     why: v.string(),
   }).index("by_run", ["runId"]),
 
-  // THE MOAT: a real, clickable, intent-scored link to a live conversation.
   threads: defineTable({
     runId: v.id("runs"),
     communityId: v.optional(v.id("communities")),
@@ -75,8 +302,8 @@ export default defineSchema({
     intentScore: v.number(), // 0-100
     intentLabel: v.string(), // browsing | comparing | frustrated | ready_to_buy
     author: v.optional(v.string()),
-    // text-embedding-3-small (1536d) of "title\nsnippet". Optional so existing /
-    // seeded rows without embeddings stay valid (they simply aren't indexed).
+    // text-embedding-3-small (1536d) of "title\nsnippet". Optional so seeded rows
+    // without embeddings stay valid (they simply aren't vector-indexed).
     embedding: v.optional(v.array(v.float64())),
   })
     .index("by_run", ["runId"])
@@ -86,7 +313,9 @@ export default defineSchema({
       filterFields: ["runId"],
     }),
 
-  // The in-thread reply, behind the human-approval gate.
+  // The in-thread community reply, behind the human-approval gate. (Distinct from
+  // `emails`: a draft is a reply dropped into the LIVE thread where the buyer is
+  // already asking; once approved it can also be emailed via AgentMail.)
   drafts: defineTable({
     runId: v.id("runs"),
     threadId: v.id("threads"),
@@ -98,10 +327,28 @@ export default defineSchema({
       v.literal("rejected"),
       v.literal("posted"),
     ),
+    // Stamped when a posted reply was emailed via AgentMail (optional/additive).
+    agentmailId: v.optional(v.string()),
+    agentmailThreadId: v.optional(v.string()),
   })
     .index("by_run", ["runId"])
     .index("by_thread", ["threadId"]),
 
+  // Per-run resolved ICP + positioning the swarm runs against. Written by enrich,
+  // repaired by the orchestrator fan-in so the board always has a brief to render.
+  // (A run tied to a campaign seeds its brief from the campaign; an ad-hoc chat run
+  // gets a brief with no campaign.)
+  brief: defineTable({
+    runId: v.id("runs"),
+    icp: v.string(),
+    positioning: v.string(),
+    generatedAt: v.number(),
+  }).index("by_run", ["runId"]),
+
+  // ==========================================================================
+  // CONTENT — in-house generation. Veo / fal-LTX video ad + a brand-consistent
+  // landing page and ad copy built from the brief + the buyers' own language.
+  // ==========================================================================
   creatives: defineTable({
     runId: v.id("runs"),
     kind: v.string(), // "video"
@@ -117,16 +364,20 @@ export default defineSchema({
     storageId: v.optional(v.id("_storage")),
   }).index("by_run", ["runId"]),
 
-  brief: defineTable({
+  designs: defineTable({
     runId: v.id("runs"),
-    icp: v.string(),
-    positioning: v.string(),
+    kind: v.string(), // "landing" | "ad_copy"
+    title: v.string(),
+    html: v.optional(v.string()), // generated landing-page markup
+    copy: v.optional(v.string()), // ad copy / headline variants
     generatedAt: v.number(),
   }).index("by_run", ["runId"]),
 
-  // Competitor ad intelligence from the Meta Ad Library (AI Ad Factories angle):
-  // which of a competitor's ads are live + how long they've run (a proxy for
-  // "this creative is working"), so INTERCEPT can mirror the winning angle.
+  // ==========================================================================
+  // COMPETITOR — Meta Ad Library intel: which of a competitor's ads are live and
+  // how long they've run (longevity = a proxy for "this creative is working"), so
+  // INTERCEPT can mirror the winning angle.
+  // ==========================================================================
   ads: defineTable({
     runId: v.id("runs"),
     advertiser: v.string(),
@@ -137,38 +388,5 @@ export default defineSchema({
     daysRunning: v.optional(v.number()), // longevity = proxy for a winning ad
     status: v.string(), // active | inactive
     url: v.string(), // permalink into the Ad Library
-  }).index("by_run", ["runId"]),
-
-  // A 24/7 watch: a Convex cron re-runs the swarm on a schedule and surfaces only
-  // NEW intent threads since the last tick. Found drafts still land in the human
-  // approval queue — autonomous discovery, human-approved outreach.
-  monitors: defineTable({
-    company: v.string(),
-    input: v.string(),
-    inputType: v.union(
-      v.literal("url"),
-      v.literal("name"),
-      v.literal("competitor"),
-      v.literal("community"),
-      v.literal("text"),
-    ),
-    active: v.boolean(),
-    cadenceMinutes: v.number(), // how often the cron ticks this monitor
-    lastRunAt: v.optional(v.number()),
-    lastRunId: v.optional(v.id("runs")),
-    createdAt: v.number(),
-  }).index("by_active", ["active"]),
-
-  // In-house design generation (AI Ad Factories): from the brief + the buyers'
-  // own language, an OpenAI-backed generator produces a brand-consistent campaign
-  // landing page + ad copy. Brand-new code — inspired by open-design's prompting
-  // approach, not derived from its source.
-  designs: defineTable({
-    runId: v.id("runs"),
-    kind: v.string(), // "landing" | "ad_copy"
-    title: v.string(),
-    html: v.optional(v.string()), // generated landing-page markup
-    copy: v.optional(v.string()), // ad copy / headline variants
-    generatedAt: v.number(),
   }).index("by_run", ["runId"]),
 });

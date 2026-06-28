@@ -28,6 +28,8 @@
 
 import { v } from "convex/values";
 import { internalAction, internalMutation } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
+import type { Id } from "../_generated/dataModel";
 import { internal } from "../_generated/api";
 import { analyzeReel } from "../../lib/gemini";
 
@@ -88,6 +90,12 @@ export const run = internalAction({
         reelUrl: url,
         status: "done",
       });
+      await logEvent(
+        ctx,
+        runId,
+        "teardown",
+        `Tore down a competitor reel — hook: ${analysis.hook.slice(0, 120)}`,
+      );
     } catch (error) {
       await ctx.runMutation(internal.agents.watcher.save, {
         runId,
@@ -124,4 +132,23 @@ function formatNote(analysis: ReelAnalysisShape): string {
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "unexpected error";
+}
+
+/** Append one line to the live activity feed. Best-effort, never blocks. */
+async function logEvent(
+  ctx: ActionCtx,
+  runId: Id<"runs">,
+  kind: string,
+  message: string,
+): Promise<void> {
+  try {
+    await ctx.runMutation(internal.events.log, {
+      runId,
+      agent: "watcher",
+      kind,
+      message,
+    });
+  } catch {
+    // ignore — the feed is additive
+  }
 }

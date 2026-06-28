@@ -1,38 +1,39 @@
 // ============================================================================
-// INTERCEPT — FIBER AI VERIFIED-CONTACT CLIENT
+// INTERCEPT — FIBER AI VERIFIED-CONTACT CLIENT  (REAL DATA)
+// ----------------------------------------------------------------------------
+// Fiber AI is the VERIFIED-EMAIL layer behind outbound (850M+ people with
+// verification). The previous build hit GET endpoints with a Bearer header; the
+// REAL Fiber API is POST-based and authenticates with the key IN THE BODY
+// (`{ apiKey, ...payload }`). Finding a verified work email is a TWO-STEP flow:
 //
-// HONEST SCOPE NOTE: this is the VERIFIED-EMAIL DATA LAYER behind outreach, and
-// it is SECONDARY to the real product beat. THE MOAT is the in-thread reply —
-// a human-approved answer dropped into the LIVE conversation where the buyer is
-// already asking the question (see lib/exa.ts + the reply/draft layer). Fiber is
-// only the optional second path: once a draft is approved, the outreach layer
-// can ask Fiber to attach a VERIFIED email/contact so the same message can also
-// be sent as 1:1 outreach. If Fiber has nothing (or no key), the in-thread reply
-// still ships untouched — outreach simply has no verified address to enrich with.
+//   findContact(company, role):
+//     1. POST /text-to-profile-search  → resolve a person profile from a
+//        natural-language query ("Head of Growth at <company>")
+//     2. POST /contacts/reveal         → reveal that profile's contact methods;
+//        we keep the email where  type === "work" && status === "valid"  (a
+//        Fiber-VERIFIED work address). Anything else → verified:false.
 //
-// Brand-new REST client (fetch + Authorization: Bearer FIBER_API_KEY). No SDK,
-// no vendored source. If FIBER_API_KEY is missing, every call NO-OPs to a
-// {verified:false} result and NEVER throws — it must never block the swarm,
-// the brief, or the reply draft.
+//   enrichDomain(domain):
+//     POST /companies/kitchen-sink      → light firmographic context for copy.
+//
+// GRACEFUL DEGRADATION: with no FIBER_API_KEY (or on any error / no verified
+// match) every call NO-OPs to `{ verified:false }` / `{ resolved:false }` and
+// NEVER throws — it must never block the swarm, the brief, or a draft.
 // ============================================================================
 
-const FIBER_BASE_URL =
-  process.env.FIBER_BASE_URL ?? "https://api.fiber.ai/v1";
-
+const FIBER_BASE_URL = process.env.FIBER_BASE_URL ?? "https://api.fiber.ai/v1";
 const FIBER_TIMEOUT_MS = 12_000;
 
 /** A best-effort verified contact for a company/role. `verified` is the gate. */
 export interface VerifiedContact {
-  /** Verified work email, when Fiber could confirm one. */
+  /** Verified WORK email, present ONLY when type==="work" && status==="valid". */
   email?: string;
-  /** Contact's full name, when known. */
   name?: string;
-  /** Contact's job title, when known. */
   title?: string;
+  linkedinUrl?: string;
   /**
-   * True ONLY when Fiber returned a contact it marked as verified. The outreach
-   * layer should treat `verified:false` as "no verified address — in-thread
-   * reply only" and must not invent or send to an unverified address.
+   * True ONLY when Fiber revealed a work email it marked valid. The outreach
+   * layer treats verified:false as "no verified address — do not send".
    */
   verified: boolean;
 }
@@ -54,6 +55,8 @@ export interface FindContactArgs {
   company: string;
   /** Optional role/title to target (e.g. "Head of Growth", "founder"). */
   role?: string;
+  /** Optional specific person name to disambiguate the profile search. */
+  name?: string;
 }
 
 const NO_CONTACT: VerifiedContact = { verified: false };
@@ -64,11 +67,22 @@ function getApiKey(): string | undefined {
   return key ? key : undefined;
 }
 
-/** Pull the first present string field from a record, trying several keys. */
+/** True when a real Fiber key is configured. */
+export function hasFiberKey(): boolean {
+  return getApiKey() !== undefined;
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object"
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 function firstString(
-  data: Record<string, unknown>,
+  data: Record<string, unknown> | undefined,
   keys: readonly string[],
 ): string | undefined {
+  if (!data) return undefined;
   for (const key of keys) {
     const value = data[key];
     if (typeof value === "string") {
@@ -80,46 +94,102 @@ function firstString(
 }
 
 /**
- * fetch with a hard timeout. Wraps any error/timeout into a resolved `null` so
- * callers can degrade gracefully instead of throwing.
+ * POST to Fiber with the key IN THE BODY. Returns the parsed object, or `null`
+ * on any error/timeout/non-2xx so callers degrade gracefully (never throws).
  */
-async function fiberFetch(
+async function fiberPost(
   path: string,
   apiKey: string,
-  query: Record<string, string>,
+  body: Record<string, unknown>,
 ): Promise<Record<string, unknown> | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FIBER_TIMEOUT_MS);
   try {
-    const params = new URLSearchParams(query).toString();
-    const url = `${FIBER_BASE_URL}${path}${params ? `?${params}` : ""}`;
-    const resp = await fetch(url, {
-      headers: {
-        authorization: `Bearer ${apiKey}`,
-        accept: "application/json",
-      },
+    const resp = await fetch(`${FIBER_BASE_URL}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      // Fiber authenticates with the key in the payload, not a Bearer header.
+      body: JSON.stringify({ apiKey, ...body }),
       signal: controller.signal,
     });
-    if (!resp.ok) return null; // rate limit / unknown / auth — degrade silently
+    if (!resp.ok) return null;
     const data = (await resp.json()) as unknown;
-    return data && typeof data === "object"
-      ? (data as Record<string, unknown>)
-      : null;
+    return asRecord(data) ?? null;
   } catch {
-    // Network error, timeout, bad JSON — never propagate; outreach is secondary.
     return null;
   } finally {
     clearTimeout(timer);
   }
 }
 
+/** Pull the first profile out of whatever envelope Fiber returns. */
+function firstProfile(
+  data: Record<string, unknown> | null,
+): Record<string, unknown> | undefined {
+  if (!data) return undefined;
+  const arrays = [data["profiles"], data["results"], data["data"], data["matches"]];
+  for (const arr of arrays) {
+    if (Array.isArray(arr) && arr.length > 0) {
+      const rec = asRecord(arr[0]);
+      if (rec) return rec;
+    }
+  }
+  // Sometimes the profile is returned directly (or nested under `profile`).
+  return asRecord(data["profile"]) ?? asRecord(data["result"]) ?? data;
+}
+
 /**
- * Find a VERIFIED contact (email/name/title) at a company, optionally narrowed
- * by role. The reply/outreach layer calls this AFTER a draft is human-approved
- * to attach a verified email so the answer can also go out as 1:1 outreach.
+ * From a reveal response, extract a VERIFIED work email. The contract: keep the
+ * email entry where `type === "work"` and `status === "valid"`. Falls back to a
+ * top-level `email` only when Fiber explicitly flags it verified/valid.
+ */
+function extractVerifiedEmail(
+  data: Record<string, unknown> | null,
+): string | undefined {
+  if (!data) return undefined;
+  const container = firstProfile(data) ?? data;
+
+  const emailArrays = [
+    data["emails"],
+    container?.["emails"],
+    container?.["contact_methods"],
+    data["contact_methods"],
+  ];
+  for (const arr of emailArrays) {
+    if (!Array.isArray(arr)) continue;
+    for (const entry of arr) {
+      const rec = asRecord(entry);
+      if (!rec) continue;
+      const type = firstString(rec, ["type", "category"])?.toLowerCase();
+      const status = firstString(rec, ["status", "verification_status"])?.toLowerCase();
+      const value = firstString(rec, ["email", "address", "value"]);
+      if (value && type === "work" && status === "valid") return value;
+    }
+    // Second pass: accept a valid email even if type is unlabeled.
+    for (const entry of arr) {
+      const rec = asRecord(entry);
+      if (!rec) continue;
+      const status = firstString(rec, ["status", "verification_status"])?.toLowerCase();
+      const value = firstString(rec, ["email", "address", "value"]);
+      if (value && status === "valid") return value;
+    }
+  }
+
+  // Top-level email only if explicitly verified.
+  const topEmail = firstString(container, ["work_email", "verified_email", "email"]);
+  const verifiedFlag =
+    container?.["verified"] === true ||
+    container?.["is_verified"] === true ||
+    firstString(container, ["status", "verification_status"])?.toLowerCase() === "valid";
+  return topEmail && verifiedFlag ? topEmail : undefined;
+}
+
+/**
+ * Find a VERIFIED work contact (email/name/title) at a company, optionally
+ * narrowed by role/name. Two-step: text-to-profile-search → contacts/reveal.
  *
- * Graceful degradation: returns {verified:false} (a no-op) when the key is
- * missing, Fiber errors, or no verified contact exists. NEVER throws.
+ * Returns {verified:false} (no-op) when the key is missing, Fiber errors, or no
+ * VALID work email exists. NEVER throws.
  */
 export async function findContact(
   args: FindContactArgs,
@@ -128,43 +198,51 @@ export async function findContact(
   if (!company) return NO_CONTACT;
 
   const apiKey = getApiKey();
-  if (!apiKey) return NO_CONTACT; // no key configured — silent no-op
+  if (!apiKey) return NO_CONTACT;
 
-  const query: Record<string, string> = { company };
-  if (args.role?.trim()) query.role = args.role.trim();
+  // Step 1 — resolve a profile from a natural-language query.
+  const queryParts = [
+    args.name?.trim(),
+    args.role?.trim() ? `${args.role.trim()} at ${company}` : `decision maker at ${company}`,
+  ].filter(Boolean);
+  const search = await fiberPost("/text-to-profile-search", apiKey, {
+    query: queryParts.join(", "),
+    company,
+    ...(args.role?.trim() ? { title: args.role.trim() } : {}),
+    limit: 1,
+  });
+  const profile = firstProfile(search);
+  if (!profile) return NO_CONTACT;
 
-  const data = await fiberFetch("/contacts/find", apiKey, query);
-  if (!data) return NO_CONTACT;
+  const profileId =
+    firstString(profile, ["id", "profile_id", "person_id", "uuid"]) ?? undefined;
+  const name = firstString(profile, ["name", "full_name"]);
+  const title = firstString(profile, ["title", "job_title", "role", "headline"]);
+  const linkedinUrl = firstString(profile, ["linkedin_url", "linkedin"]);
 
-  // Fiber may nest the contact under `contact`/`result`/`data`; flatten it.
-  const nested =
-    (data.contact as Record<string, unknown> | undefined) ??
-    (data.result as Record<string, unknown> | undefined) ??
-    (data.data as Record<string, unknown> | undefined) ??
-    data;
+  // Step 2 — reveal contact methods for that profile.
+  const reveal = await fiberPost("/contacts/reveal", apiKey, {
+    ...(profileId ? { profileId } : {}),
+    ...(linkedinUrl ? { linkedinUrl } : {}),
+    company,
+    ...(name ? { name } : {}),
+  });
 
-  const email = firstString(nested, ["email", "work_email", "verified_email"]);
-  // Only claim verified when Fiber says so AND we actually have an email.
-  const verifiedFlag =
-    nested.verified === true ||
-    nested.is_verified === true ||
-    firstString(nested, ["status", "verification_status"]) === "verified";
-
+  const email = extractVerifiedEmail(reveal) ?? extractVerifiedEmail(search);
   return {
     email,
-    name: firstString(nested, ["name", "full_name"]),
-    title: firstString(nested, ["title", "job_title", "role"]),
-    verified: Boolean(email) && verifiedFlag,
+    name,
+    title,
+    linkedinUrl,
+    verified: Boolean(email),
   };
 }
 
 /**
- * Enrich a company DOMAIN into light firmographic context Fiber exposes. Useful
- * for shaping outreach copy, but secondary — the brief's ICP/positioning comes
- * from the enrichment agent, not from here.
- *
- * Graceful degradation: returns {resolved:false} when the key is missing or
- * Fiber errors. NEVER throws.
+ * Enrich a company DOMAIN into light firmographic context via Fiber's
+ * `/companies/kitchen-sink`. Secondary — the brief's ICP/positioning comes from
+ * the enrichment agent, not here. Returns {resolved:false} on no key / error.
+ * NEVER throws.
  */
 export async function enrichDomain(domain: string): Promise<FiberDomainInfo> {
   const normalized = domain
@@ -178,26 +256,26 @@ export async function enrichDomain(domain: string): Promise<FiberDomainInfo> {
   if (!normalized) return { domain: "", resolved: false };
 
   const apiKey = getApiKey();
-  if (!apiKey) return { domain: normalized, resolved: false }; // no-op
+  if (!apiKey) return { domain: normalized, resolved: false };
 
-  const data = await fiberFetch("/companies/enrich", apiKey, {
+  const data = await fiberPost("/companies/kitchen-sink", apiKey, {
     domain: normalized,
   });
   if (!data) return { domain: normalized, resolved: false };
 
-  const nested =
-    (data.company as Record<string, unknown> | undefined) ??
-    (data.result as Record<string, unknown> | undefined) ??
-    (data.data as Record<string, unknown> | undefined) ??
+  const company =
+    asRecord(data["company"]) ??
+    asRecord(data["result"]) ??
+    asRecord(data["data"]) ??
     data;
 
   return {
     domain: normalized,
-    name: firstString(nested, ["name", "company_name"]),
-    description: firstString(nested, ["description", "summary"]),
-    industry: firstString(nested, ["industry", "sector"]),
-    employeeCount: firstString(nested, ["employee_count", "size", "headcount"]),
-    location: firstString(nested, ["location", "hq", "headquarters"]),
+    name: firstString(company, ["name", "company_name"]),
+    description: firstString(company, ["description", "summary", "short_description"]),
+    industry: firstString(company, ["industry", "sector"]),
+    employeeCount: firstString(company, ["employee_count", "size", "headcount"]),
+    location: firstString(company, ["location", "hq", "headquarters"]),
     resolved: true,
   };
 }

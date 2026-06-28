@@ -66,6 +66,8 @@ export const seedFixture = mutation({
     const runId = await ctx.db.insert("runs", {
       input: fixture.input,
       inputType: "name",
+      intent: "analyze",
+      trigger: "manual",
       status: "complete",
       startedAt: now,
       deadlineAt: now + FANIN_DEADLINE_MS,

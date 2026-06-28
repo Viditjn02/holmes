@@ -4,15 +4,16 @@ import ConvexClientProvider from "@/components/ConvexClientProvider";
 import PostHogProvider from "@/components/PostHogProvider";
 
 export const metadata: Metadata = {
-  title: "INTERCEPT — find the live conversations your buyers are having",
+  title: "INTERCEPT — the AI-native GTM chat",
   description:
-    "Point INTERCEPT at a company. A swarm of agents finds the live communities where its buyers are asking the exact question it answers — each a clickable, intent-scored thread with a drafted reply, in under 3 minutes.",
+    "One chat. Paste anything — a company, a competitor, an idea. A router decides what to do and does it: finds the live threads where your buyers are asking, sources decision-makers with verified emails, drafts and sends signal-grounded outreach, scouts competitor ads, and makes the creative — live, on a canvas beside you.",
 };
 
 export const viewport: Viewport = {
   themeColor: "#0a0a0b",
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({

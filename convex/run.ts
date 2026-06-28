@@ -3,11 +3,12 @@ import { internalAction, internalMutation } from "./_generated/server";
 import type { ActionCtx } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { AGENTS } from "../lib/contract";
+import { AGENT_REGISTRY, AGENTS, CAPABILITY_PLANS } from "../lib/contract";
+import type { Capability } from "../lib/contract";
 import { upsertBrief } from "./brief";
 
 // ============================================================================
-// INTERCEPT — THE ORCHESTRATOR.
+// INTERCEPT — THE ORCHESTRATOR (plan-driven).
 //
 // Owns the live swarm board (agentStatus) and the hard fan-in deadline. The
 // P1 finding: the brief + board MUST render regardless of slow/failed agents.
@@ -15,31 +16,27 @@ import { upsertBrief } from "./brief";
 // it early once the swarm settles. Whichever fires first wins; finalize is
 // idempotent (it no-ops once the run leaves "running").
 //
+// The execution plan is no longer hardcoded — it comes from the routed
+// capability: CAPABILITY_PLANS[run.intent] is an ordered list of phases, each a
+// set of agents run in parallel (Promise.allSettled, so a straggler never blocks
+// the rest). Different intents drive different rosters (analyze = full swarm,
+// discovery = just the moat, outbound = sourcer→qualifier→writer, etc.).
+//
 // Agents persist their OWN results. The orchestrator only drives status +
 // the deadline. It never touches communities/threads/drafts/creatives.
 // ============================================================================
 
-// The seven board agents (per the frozen contract). `reply` runs in the swarm
-// too but is NOT a board row — it silently drafts in-thread replies off the
-// threads the detective found.
-const BOARD_AGENTS: ReadonlySet<string> = new Set<string>(AGENTS);
+// BOARD agents get running -> done/failed transitions + a tile; silent agents
+// (router, enrich, reply) run but never touch agentStatus. Sourced from the
+// single registry so it can never drift from the contract.
+const BOARD_AGENTS: ReadonlySet<string> = new Set<string>(
+  AGENTS.filter((id) => AGENT_REGISTRY[id].board),
+);
 
-// Execution plan. Router first (it resolves the canonical domain + persists it
-// onto the run), THEN enrich (which scrapes that domain instead of the raw
-// input). Once the company is known we fan out the detective (the moat — needs
-// enrich context) alongside `adscout` (competitor ad intel from the Meta Ad
-// Library — needs the resolved company). The final phase runs the consumers
-// that depend on the detective's threads: `reply` drafts in-thread replies,
-// `creative` builds the Veo ad, `designer` builds the landing page + ad copy
-// from the brief + buyer language, and `watcher` tears down a competitor reel
-// (if one is configured). Promise.allSettled means one straggler never blocks
-// the others.
-const PHASES: ReadonlyArray<ReadonlyArray<string>> = [
-  ["router"],
-  ["enrich"],
-  ["detective", "adscout"],
-  ["reply", "creative", "watcher", "designer"],
-];
+/** The ordered phase plan for a run's capability. */
+function phasesForIntent(intent: Capability): ReadonlyArray<ReadonlyArray<string>> {
+  return CAPABILITY_PLANS[intent] as ReadonlyArray<ReadonlyArray<string>>;
+}
 
 // Optional competitor reel for the watcher to tear down. There is no per-run
 // reel source today, so this is configured out-of-band. When absent, the
@@ -155,8 +152,11 @@ async function runAgent(
  */
 export const orchestrate = internalAction({
   args: { runId: v.id("runs") },
-  handler: async (ctx, { runId }) => {
-    const run = await ctx.runQuery(internal.runs.getRunInternal, { runId });
+  handler: async (ctx, { runId }): Promise<void> => {
+    const run: Doc<"runs"> | null = await ctx.runQuery(
+      internal.runs.getRunInternal,
+      { runId },
+    );
     if (!run) return;
 
     // Guaranteed cap: render from whatever exists at the deadline, no matter
@@ -164,7 +164,10 @@ export const orchestrate = internalAction({
     await ctx.scheduler.runAt(run.deadlineAt, internal.run.finalize, { runId });
 
     try {
-      for (const phase of PHASES) {
+      // The plan is the routed capability's phase list. run.intent is always one
+      // of the six capabilities (schema-enforced), so the lookup is total.
+      const phases = phasesForIntent(run.intent);
+      for (const phase of phases) {
         await Promise.allSettled(
           phase.map((name) => runAgent(ctx, run, name)),
         );
@@ -185,7 +188,7 @@ export const orchestrate = internalAction({
  */
 export const finalize = internalMutation({
   args: { runId: v.id("runs") },
-  handler: async (ctx, { runId }) => {
+  handler: async (ctx, { runId }): Promise<void> => {
     const run = await ctx.db.get(runId);
     if (!run) return;
 

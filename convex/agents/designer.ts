@@ -23,6 +23,7 @@ import {
   internalQuery,
   query,
 } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id, Doc } from "../_generated/dataModel";
 import { MAX_THREADS } from "../../lib/contract";
@@ -147,12 +148,89 @@ export const run = internalAction({
         title: `${data.company} — ad copy variants`,
         copy: result.copy,
       });
+
+      await logEvent(
+        ctx,
+        runId,
+        "designed",
+        `Generated a campaign landing page + 3 ad-copy variants for ${data.company} in the buyers' own language.`,
+      );
+
+      // Compounding: persist the resolved positioning + buyer language back to
+      // the brain so the next run for this market starts smarter. Skipped when
+      // there's nothing real to remember (avoid polluting the brain with the
+      // fallback brief). Best-effort — never blocks finalize.
+      await rememberDesign(ctx, data, result.title);
     } catch {
       // Should be unreachable (generateLanding never throws), but stay safe:
       // the run must finalize regardless of the design lane.
     }
   },
 });
+
+// ----------------------------------------------------------------------------
+// Live-feed + compounding helpers. Both best-effort; a failure here must never
+// block the designer lane (the run still finalizes with the design rows).
+// ----------------------------------------------------------------------------
+async function logEvent(
+  ctx: ActionCtx,
+  runId: Id<"runs">,
+  kind: string,
+  message: string,
+): Promise<void> {
+  try {
+    await ctx.runMutation(internal.events.log, {
+      runId,
+      agent: "designer",
+      kind,
+      message,
+    });
+  } catch {
+    // ignore — the feed is additive
+  }
+}
+
+async function rememberDesign(
+  ctx: ActionCtx,
+  data: DesignerContext,
+  pageTitle: string,
+): Promise<void> {
+  const hasSignal =
+    data.positioning.trim().length > 0 || data.buyerLanguage.length > 0;
+  if (!hasSignal) return;
+
+  const slug = `intercept-gtm-${slugify(data.company)}`;
+  const markdown = [
+    `# ${data.company} — GTM findings (INTERCEPT)`,
+    "",
+    data.positioning.trim() ? `**Positioning:** ${data.positioning.trim()}` : "",
+    data.icp.trim() ? `**ICP:** ${data.icp.trim()}` : "",
+    `**Landing angle:** ${pageTitle}`,
+    "",
+    data.buyerLanguage.length
+      ? ["**Buyers' own language (verbatim):**", ...data.buyerLanguage.map((p) => `- ${p}`)].join("\n")
+      : "",
+  ]
+    .filter((line) => line.length > 0)
+    .join("\n");
+
+  try {
+    await ctx.runAction(internal.brain.remember, { slug, markdown });
+  } catch {
+    // brain unavailable in this runtime — degrade silently
+  }
+}
+
+/** Lowercase, hyphenated, filesystem-safe slug for a brain page key. */
+function slugify(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "company"
+  );
+}
 
 // ----------------------------------------------------------------------------
 // PUBLIC QUERY: the run's generated designs (reactive — drives DesignPanel).

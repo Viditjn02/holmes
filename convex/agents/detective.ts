@@ -35,7 +35,10 @@ import {
   type IntentLabel,
 } from "../../lib/contract";
 import { chatJSON, embed } from "../../lib/openai";
-import { searchThreads, type ExaThread } from "../../lib/exa";
+import type { ExaThread } from "../../lib/exa";
+// Discovery uses Exa when a key is present, else a FREE HN + Reddit fallback so
+// the moat works at $0. Same ExaThread shape — a drop-in for the old searchThreads.
+import { discoverThreads } from "../../lib/discovery";
 
 // ----------------------------------------------------------------------------
 // Tuning knobs
@@ -103,7 +106,7 @@ export const run = internalAction({
     // 2. search reddit + HN in parallel; gather REAL threads
     const settled = await Promise.allSettled(
       queries.map((query) =>
-        searchThreads({
+        discoverThreads({
           query,
           includeDomains: INCLUDE_DOMAINS,
           numResults: RESULTS_PER_QUERY,

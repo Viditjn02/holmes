@@ -122,6 +122,51 @@ export async function chatText(
   return content.trim();
 }
 
+/**
+ * Arguments for {@link streamChatText}. Mirrors {@link ChatOpts} plus the two
+ * prompts. Used by the chat router (convex/chat.ts) to stream a conversational
+ * reply token-by-token into the assistant `messages` row.
+ */
+export interface ChatStreamArgs extends ChatOpts {
+  system: string;
+  user: string;
+}
+
+/**
+ * Stream a freeform completion, invoking `onToken` for every delta with both the
+ * incremental token and the full accumulated text so far. Returns the final
+ * trimmed text. The caller decides how often to persist (throttle the DB writes).
+ *
+ * Runs over the OpenAI SDK's streaming API — valid in Convex's default action
+ * runtime and in "use node" actions alike.
+ */
+export async function streamChatText(
+  args: ChatStreamArgs,
+  onToken: (delta: string, full: string) => void | Promise<void>,
+): Promise<string> {
+  const client = getClient();
+  const stream = await client.chat.completions.create({
+    model: args.model ?? DEFAULT_MODEL,
+    temperature: args.temperature ?? 0.6,
+    max_tokens: args.maxTokens,
+    stream: true,
+    messages: [
+      { role: "system", content: args.system },
+      { role: "user", content: args.user },
+    ],
+  });
+
+  let full = "";
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content ?? "";
+    if (delta) {
+      full += delta;
+      await onToken(delta, full);
+    }
+  }
+  return full.trim();
+}
+
 const EMBED_MODEL = "text-embedding-3-small";
 const EMBED_DIMENSIONS = 1536;
 

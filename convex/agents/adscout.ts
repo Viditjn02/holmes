@@ -19,8 +19,9 @@
 
 import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
-import type { Doc } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import { searchAds, type AdRow } from "../../lib/meta";
 
 // How many ads to keep on the board. The winning angles cluster at the top once
@@ -113,11 +114,96 @@ export const run = internalAction({
       ads = [];
     }
 
-    if (ads.length === 0) return; // nothing to show — silent, honest no-op
+    if (ads.length === 0) {
+      // Honest no-op for the board, but tell the live feed why nothing surfaced.
+      await logEvent(
+        ctx,
+        runId,
+        "competitor",
+        `No live competitor ads surfaced for ${advertiser} (Meta Ad Library commercial search is region/identity restricted).`,
+      );
+      return;
+    }
 
+    const ranked = rankAds(ads);
     await ctx.runMutation(internal.agents.adscout.save, {
       runId,
-      ads: rankAds(ads),
+      ads: ranked,
     });
+
+    const topDays = ranked[0]?.daysRunning;
+    await logEvent(
+      ctx,
+      runId,
+      "competitor",
+      `Found ${ranked.length} live ads for ${advertiser}, ranked by longevity${
+        topDays !== undefined ? ` (top: running ${topDays} days)` : ""
+      }.`,
+    );
+
+    // Compounding: ad longevity = a proven winning angle. Persist the top
+    // angles to the brain so future runs can mirror what already converts.
+    await rememberAngles(ctx, advertiser, ranked);
   },
 });
+
+// ----------------------------------------------------------------------------
+// Live-feed + compounding helpers. Best-effort — never block the adscout lane.
+// ----------------------------------------------------------------------------
+async function logEvent(
+  ctx: ActionCtx,
+  runId: Id<"runs">,
+  kind: string,
+  message: string,
+): Promise<void> {
+  try {
+    await ctx.runMutation(internal.events.log, {
+      runId,
+      agent: "adscout",
+      kind,
+      message,
+    });
+  } catch {
+    // ignore — the feed is additive
+  }
+}
+
+async function rememberAngles(
+  ctx: ActionCtx,
+  advertiser: string,
+  ads: AdRow[],
+): Promise<void> {
+  const winners = ads
+    .filter((a) => a.status === "active" && (a.daysRunning ?? 0) >= 7 && a.text.trim())
+    .slice(0, 5);
+  if (winners.length === 0) return;
+
+  const slug = `intercept-competitor-${slugify(advertiser)}`;
+  const markdown = [
+    `# ${advertiser} — winning ad angles (Meta Ad Library, via INTERCEPT)`,
+    "",
+    "Ranked by run-duration (longer = a more proven angle):",
+    "",
+    ...winners.map(
+      (a) =>
+        `- (${a.daysRunning ?? "?"}d) ${a.text.replace(/\s+/g, " ").trim().slice(0, 220)}`,
+    ),
+  ].join("\n");
+
+  try {
+    await ctx.runAction(internal.brain.remember, { slug, markdown });
+  } catch {
+    // brain unavailable in this runtime — degrade silently
+  }
+}
+
+/** Lowercase, hyphenated, filesystem-safe slug for a brain page key. */
+function slugify(value: string): string {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 60) || "competitor"
+  );
+}

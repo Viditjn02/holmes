@@ -24,6 +24,7 @@
 
 import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery } from "../_generated/server";
+import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { MAX_THREADS } from "../../lib/contract";
@@ -130,6 +131,7 @@ export const run = internalAction({
       prompt,
       model: VEO_MODEL,
     });
+    await logEvent(ctx, runId, "rendered", `Rendering a video ad for ${data.company}…`);
 
     try {
       const result = await generateAd({
@@ -147,6 +149,12 @@ export const run = internalAction({
           prompt,
           model: result.model ?? VEO_MODEL,
         });
+        await logEvent(
+          ctx,
+          runId,
+          "rendered",
+          "Video render unavailable on this key — the rest of the brief is unaffected.",
+        );
         return;
       }
 
@@ -170,6 +178,12 @@ export const run = internalAction({
         url: result.url,
         storageId,
       });
+      await logEvent(
+        ctx,
+        runId,
+        "rendered",
+        `Video ad ready (${result.model ?? VEO_MODEL}).`,
+      );
     } catch (error) {
       // Render failed — record it and return cleanly. The fan-in still ships
       // the brief; the creative is simply marked failed on the board.
@@ -179,9 +193,32 @@ export const run = internalAction({
         prompt,
         model: VEO_MODEL,
       });
+      await logEvent(ctx, runId, "rendered", "Video render failed.");
     }
   },
 });
+
+// ----------------------------------------------------------------------------
+// Append one line to the live activity feed. Best-effort — a feed write must
+// never block the creative lane.
+// ----------------------------------------------------------------------------
+async function logEvent(
+  ctx: ActionCtx,
+  runId: Id<"runs">,
+  kind: string,
+  message: string,
+): Promise<void> {
+  try {
+    await ctx.runMutation(internal.events.log, {
+      runId,
+      agent: "creative",
+      kind,
+      message,
+    });
+  } catch {
+    // ignore — the feed is additive
+  }
+}
 
 // ----------------------------------------------------------------------------
 // Prompt construction — turn brief + buyers' own language into a Veo ad.

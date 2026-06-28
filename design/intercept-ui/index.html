@@ -1,0 +1,766 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>INTERCEPT — GTM Mission Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300..700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+/* ── Linear design-system tokens (verbatim :root) with brief's amber/green accent override ── */
+:root {
+  --bg:           #08090a;
+  --surface:      #191a1b;
+  --surface-warm: var(--surface);
+  --fg:   #f7f8f8;
+  --fg-2: #d0d6e0;
+  --muted: #8a8f98;
+  --meta:  #62666d;
+  --border:      rgba(255, 255, 255, 0.08);
+  --border-soft: rgba(255, 255, 255, 0.05);
+
+  /* accent override per brief — amber primary, green live/done */
+  --accent:        #ff6a2b;
+  --accent-on:     #08090a;
+  --accent-hover:  #ff7e45;
+  --accent-dim:    rgba(255, 106, 43, 0.14);
+  --accent-line:   rgba(255, 106, 43, 0.38);
+  --live:          #34d399;
+  --live-dim:      rgba(52, 211, 153, 0.14);
+  --live-line:     rgba(52, 211, 153, 0.40);
+
+  --success: #34d399;
+  --warn:    #eab308;
+  --danger:  #f87171;
+
+  --panel:  #0f1011;
+
+  --font-display: "Inter", -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-body:    "Inter", -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Monaco, monospace;
+
+  --radius-sm:   6px;
+  --radius-md:   8px;
+  --radius-lg:   12px;
+  --radius-pill: 9999px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-body);
+  font-feature-settings: "cv01", "ss03";
+  font-weight: 510;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body { overflow: hidden; }
+
+::selection { background: var(--accent-dim); color: var(--fg); }
+
+/* thin scrollbars */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 9999px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+/* ════════════════════════════ APP SHELL ════════════════════════════ */
+.app {
+  display: grid;
+  grid-template-columns: 232px minmax(360px, 1fr) minmax(560px, 1.45fr);
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ───────────────────────────── LEFT RAIL ───────────────────────────── */
+.rail {
+  background: var(--panel);
+  border-right: 1px solid var(--border-soft);
+  display: flex;
+  flex-direction: column;
+  padding: 14px 12px;
+  gap: 4px;
+  min-height: 0;
+}
+.brand {
+  display: flex; align-items: center; gap: 9px;
+  padding: 6px 8px 14px;
+}
+.brand .mark {
+  width: 26px; height: 26px; border-radius: 7px;
+  background: radial-gradient(120% 120% at 30% 20%, #2a1a12, #0c0c0d);
+  border: 1px solid var(--accent-line);
+  display: grid; place-items: center; flex: none;
+  box-shadow: 0 0 18px -6px var(--accent);
+}
+.brand .mark svg { width: 15px; height: 15px; }
+.brand .name {
+  font-size: 14px; font-weight: 590; letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.brand .name b { color: var(--accent); font-weight: 590; }
+
+.rail-group-label {
+  font-family: var(--font-mono);
+  font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--meta); padding: 14px 9px 6px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 9px; border-radius: var(--radius-sm);
+  color: var(--fg-2); font-size: 13.5px; font-weight: 510;
+  cursor: pointer; border: 1px solid transparent;
+  transition: background 140ms ease, color 140ms ease;
+  position: relative;
+}
+.nav-item svg { width: 16px; height: 16px; flex: none; color: var(--muted); }
+.nav-item:hover { background: rgba(255,255,255,0.03); color: var(--fg); }
+.nav-item:hover svg { color: var(--fg-2); }
+.nav-item.active {
+  background: rgba(255,255,255,0.05);
+  color: var(--fg); border-color: var(--border-soft);
+}
+.nav-item.active svg { color: var(--accent); }
+.nav-item .count {
+  margin-left: auto; font-family: var(--font-mono); font-size: 11px;
+  color: var(--meta);
+}
+.nav-item.active .count { color: var(--fg-2); }
+
+.recent { margin-top: 6px; overflow-y: auto; flex: 1; min-height: 0; }
+.run-link {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 9px; border-radius: var(--radius-sm);
+  cursor: pointer; transition: background 140ms ease;
+}
+.run-link:hover { background: rgba(255,255,255,0.03); }
+.run-dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.run-dot.live { background: var(--live); box-shadow: 0 0 8px var(--live); animation: blink 1.6s infinite; }
+.run-dot.done { background: var(--meta); }
+.run-dot.amber { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: blink 1.6s infinite; }
+.run-meta { min-width: 0; }
+.run-title {
+  font-size: 12.5px; color: var(--fg-2); font-weight: 510;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.run-link.current .run-title { color: var(--fg); }
+.run-sub { font-family: var(--font-mono); font-size: 10px; color: var(--meta); margin-top: 1px; }
+
+.rail-user {
+  display: flex; align-items: center; gap: 9px;
+  padding: 8px; border-top: 1px solid var(--border-soft); margin-top: 4px;
+}
+.avatar {
+  width: 26px; height: 26px; border-radius: 50%; flex: none;
+  background: linear-gradient(135deg, #3a2418, #1a1a1c);
+  border: 1px solid var(--border);
+  display: grid; place-items: center;
+  font-size: 11px; font-weight: 590; color: var(--accent);
+}
+.rail-user .who { font-size: 12.5px; color: var(--fg-2); }
+.rail-user .org { font-family: var(--font-mono); font-size: 10px; color: var(--meta); }
+
+/* ───────────────────────────── CENTER CHAT ───────────────────────────── */
+.chat {
+  background: var(--bg);
+  border-right: 1px solid var(--border-soft);
+  display: flex; flex-direction: column; min-height: 0;
+}
+.chat-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 18px; border-bottom: 1px solid var(--border-soft);
+}
+.chat-head .ttl { font-size: 13.5px; font-weight: 590; color: var(--fg); }
+.chat-head .sub { font-family: var(--font-mono); font-size: 11px; color: var(--meta); }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em;
+  padding: 3px 9px 3px 7px; border-radius: var(--radius-pill);
+  border: 1px solid var(--border); color: var(--fg-2);
+}
+.pill .pdot { width: 6px; height: 6px; border-radius: 50%; }
+.pill.running { border-color: var(--live-line); color: var(--live); }
+.pill.running .pdot { background: var(--live); box-shadow: 0 0 8px var(--live); animation: blink 1.4s infinite; }
+
+.chat-scroll { flex: 1; overflow-y: auto; padding: 22px 18px 8px; min-height: 0; }
+.msg { margin-bottom: 22px; max-width: 100%; }
+.msg-role {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 9px;
+  font-size: 11px; font-family: var(--font-mono);
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--meta);
+}
+.msg-role .ico { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; border: 1px solid var(--border); flex:none; }
+.msg-role .ico svg { width: 11px; height: 11px; }
+.msg.user .msg-role .ico { background: rgba(255,255,255,0.04); color: var(--fg-2); }
+.msg.agent .msg-role .ico { background: var(--accent-dim); color: var(--accent); border-color: var(--accent-line); }
+
+.bubble-user {
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px; font-size: 14.5px; color: var(--fg);
+  line-height: 1.5;
+}
+.bubble-user .paste {
+  font-family: var(--font-mono); font-size: 12px; color: var(--accent);
+  background: var(--accent-dim); padding: 1px 6px; border-radius: 4px;
+}
+
+.reason {
+  border-left: 1px solid var(--border);
+  padding-left: 14px; margin-left: 8px;
+  display: flex; flex-direction: column; gap: 9px;
+}
+.rstep { font-size: 13px; color: var(--fg-2); line-height: 1.5; display: flex; gap: 9px; align-items: flex-start; opacity: 0; transform: translateY(4px); transition: opacity .4s ease, transform .4s ease; }
+.rstep.show { opacity: 1; transform: none; }
+.rstep .tick { flex: none; margin-top: 2px; width: 13px; height: 13px; color: var(--live); }
+.rstep .spin { flex: none; margin-top: 3px; width: 11px; height: 11px; border: 1.5px solid var(--accent-line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+.rstep b { color: var(--fg); font-weight: 590; }
+.rstep .num { font-family: var(--font-mono); color: var(--accent); }
+
+.dispatch-card {
+  margin-top: 4px; background: rgba(255,255,255,0.02);
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+.dispatch-card .dc-h { font-size: 12.5px; color: var(--fg); font-weight: 590; display:flex; align-items:center; gap:8px; }
+.dispatch-card .dc-h svg { width: 14px; height: 14px; color: var(--accent); }
+.dispatch-card .dc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-top: 10px; }
+.dispatch-card .dc-row { display: flex; justify-content: space-between; font-size: 12px; }
+.dispatch-card .dc-row span { color: var(--muted); }
+.dispatch-card .dc-row b { color: var(--fg-2); font-family: var(--font-mono); font-weight: 500; font-size: 11.5px; }
+
+.chat-input-wrap { padding: 14px 18px 18px; border-top: 1px solid var(--border-soft); }
+.chat-input {
+  display: flex; align-items: flex-end; gap: 10px;
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 11px 12px 11px 14px;
+  transition: border-color 160ms ease, box-shadow 160ms ease;
+}
+.chat-input:focus-within { border-color: var(--accent-line); box-shadow: 0 0 0 3px var(--accent-dim); }
+.chat-input textarea {
+  flex: 1; background: transparent; border: none; outline: none; resize: none;
+  color: var(--fg); font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  font-feature-settings: "cv01","ss03"; max-height: 120px;
+}
+.chat-input textarea::placeholder { color: var(--meta); }
+.send-btn {
+  flex: none; width: 32px; height: 32px; border-radius: var(--radius-sm);
+  background: var(--accent); color: var(--accent-on); border: none; cursor: pointer;
+  display: grid; place-items: center; transition: background 140ms ease, transform 80ms ease;
+}
+.send-btn:hover { background: var(--accent-hover); }
+.send-btn:active { transform: scale(0.94); }
+.send-btn svg { width: 15px; height: 15px; }
+.input-hint { display: flex; gap: 12px; margin-top: 9px; padding: 0 2px; }
+.input-hint span { font-family: var(--font-mono); font-size: 10.5px; color: var(--meta); display: flex; align-items: center; gap: 5px; }
+.kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; color: var(--fg-2); font-size: 10px; }
+
+/* ───────────────────────────── RIGHT CANVAS ───────────────────────────── */
+.canvas { display: flex; flex-direction: column; min-height: 0; background: var(--bg); }
+.canvas-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 20px; border-bottom: 1px solid var(--border-soft);
+}
+.canvas-head .ch-title { font-size: 13.5px; font-weight: 590; }
+.canvas-head .ch-sub { font-family: var(--font-mono); font-size: 11px; color: var(--meta); }
+.canvas-tabs { margin-left: auto; display: flex; gap: 2px; background: rgba(255,255,255,0.03); border:1px solid var(--border-soft); padding: 2px; border-radius: var(--radius-sm); }
+.ctab { font-size: 11.5px; padding: 4px 10px; border-radius: 4px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.ctab:hover { color: var(--fg-2); }
+.ctab.active { background: rgba(255,255,255,0.06); color: var(--fg); }
+
+/* ── Swarm strip ── */
+.swarm {
+  padding: 18px 20px 16px; border-bottom: 1px solid var(--border-soft);
+  background:
+    radial-gradient(140% 120% at 50% -40%, rgba(255,106,43,0.05), transparent 60%);
+}
+.swarm-label { display: flex; align-items: center; gap: 9px; margin-bottom: 16px; }
+.swarm-label .sl-t { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--meta); }
+.swarm-label .sl-stat { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--fg-2); }
+.swarm-label .sl-stat b { color: var(--live); }
+
+.swarm-row { display: flex; align-items: flex-start; }
+.node { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 0; flex: 1 1 0; min-width: 0; position: relative; }
+.node .ring {
+  width: 46px; height: 46px; border-radius: 50%;
+  display: grid; place-items: center; position: relative;
+  border: 1px solid var(--border); background: rgba(255,255,255,0.02);
+  color: var(--muted); transition: all .3s ease;
+}
+.node .ring svg { width: 19px; height: 19px; z-index: 2; }
+.node .nlabel { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--meta); text-align: center; }
+.node .ncount { font-family: var(--font-mono); font-size: 10px; color: var(--fg-2); }
+
+.node.done .ring { border-color: var(--live-line); color: var(--live); background: var(--live-dim); }
+.node.done .nlabel { color: var(--fg-2); }
+.node.active .ring { border-color: var(--accent-line); color: var(--accent); background: var(--accent-dim); }
+.node.active .ring::before {
+  content:""; position: absolute; inset: -1px; border-radius: 50%;
+  border: 1.5px solid var(--accent); opacity: .8;
+  animation: pulse-ring 1.6s cubic-bezier(0.2,0,0,1) infinite;
+}
+.node.active .nlabel { color: var(--accent); }
+.node.queued .ring { opacity: .55; }
+.node.queued .nlabel, .node.queued .ncount { opacity: .55; }
+
+.edge { flex: 0 0 auto; height: 1px; width: 30px; margin-top: 23px; background: var(--border); position: relative; align-self: flex-start; }
+.edge.flow { background: linear-gradient(90deg, var(--live), var(--accent)); }
+.edge.done { background: var(--live-line); }
+.edge.flow::after {
+  content:""; position: absolute; top: -1.5px; left: 0; width: 6px; height: 4px; border-radius: 2px;
+  background: var(--accent); box-shadow: 0 0 8px var(--accent);
+  animation: travel 1.4s linear infinite;
+}
+
+/* ── Canvas body / kanban ── */
+.canvas-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 332px; }
+.kanban-wrap { overflow: auto; padding: 16px 8px 16px 20px; min-height: 0; }
+.kanban { display: flex; gap: 12px; height: 100%; min-width: max-content; }
+.col { width: 188px; flex: none; display: flex; flex-direction: column; min-height: 0; }
+.col-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px 11px; }
+.col-head .ch-dot { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+.col-head .ch-name { font-size: 12px; font-weight: 590; color: var(--fg-2); text-transform: capitalize; }
+.col-head .ch-n { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--meta); }
+.col-cards { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; padding-right: 4px; }
+
+.card {
+  background: rgba(255,255,255,0.02); border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md); padding: 11px 11px 10px; cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease, transform 120ms ease;
+}
+.card:hover { background: rgba(255,255,255,0.05); border-color: var(--border); }
+.card.sel { border-color: var(--accent-line); background: var(--accent-dim); }
+.card .c-top { display: flex; align-items: flex-start; gap: 8px; }
+.card .c-av {
+  width: 24px; height: 24px; border-radius: 6px; flex: none;
+  display: grid; place-items: center; font-size: 10px; font-weight: 590;
+  background: rgba(255,255,255,0.05); color: var(--fg-2);
+  font-family: var(--font-mono);
+}
+.card .c-id { min-width: 0; flex: 1; }
+.card .c-name { font-size: 12.5px; font-weight: 590; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .c-role { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+.card .c-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+.card .c-co { font-family: var(--font-mono); font-size: 10px; color: var(--meta); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.score {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+  padding: 1px 6px; border-radius: 4px; flex: none; letter-spacing: 0.01em;
+}
+.score.hot  { color: var(--live);   background: var(--live-dim); }
+.score.warm { color: var(--accent); background: var(--accent-dim); }
+.score.cool { color: var(--muted);  background: rgba(255,255,255,0.05); }
+.card .c-state {
+  margin-top: 9px; font-family: var(--font-mono); font-size: 9.5px;
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--meta);
+  display: flex; align-items: center; gap: 6px;
+}
+.card .c-state .s-dot { width: 5px; height: 5px; border-radius: 50%; }
+
+/* ── Email inspector ── */
+.inspector {
+  border-left: 1px solid var(--border-soft); background: var(--panel);
+  display: flex; flex-direction: column; min-height: 0;
+}
+.insp-head { padding: 14px 16px 12px; border-bottom: 1px solid var(--border-soft); }
+.insp-head .ih-k { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--meta); }
+.insp-prospect { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.insp-prospect .ip-av { width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; font-family: var(--font-mono); font-weight: 590; font-size: 12px; background: rgba(255,255,255,0.05); color: var(--fg); flex:none; }
+.insp-prospect .ip-name { font-size: 14px; font-weight: 590; color: var(--fg); }
+.insp-prospect .ip-meta { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+.insp-prospect .ip-score { margin-left: auto; text-align: right; }
+.insp-prospect .ip-score .lab { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--meta); }
+.insp-prospect .ip-score .val { font-family: var(--font-mono); font-size: 18px; font-weight: 600; color: var(--live); }
+
+.insp-body { flex: 1; overflow-y: auto; padding: 14px 16px; min-height: 0; }
+.signal-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.sig {
+  font-family: var(--font-mono); font-size: 10px; color: var(--fg-2);
+  border: 1px solid var(--border-soft); border-radius: var(--radius-pill);
+  padding: 3px 8px; display: flex; align-items: center; gap: 5px;
+}
+.sig svg { width: 10px; height: 10px; color: var(--live); }
+
+.email {
+  background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+  border-radius: var(--radius-md); overflow: hidden;
+}
+.email-meta { padding: 11px 13px; border-bottom: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: 5px; }
+.email-meta .em-line { display: flex; gap: 8px; font-size: 11.5px; }
+.email-meta .em-line span { font-family: var(--font-mono); font-size: 10px; color: var(--meta); width: 42px; flex: none; padding-top: 1px; }
+.email-meta .em-line b { color: var(--fg-2); font-weight: 510; }
+.email-meta .em-subject b { color: var(--fg); font-weight: 590; font-size: 12.5px; }
+.email-body { padding: 13px; font-size: 12.5px; line-height: 1.62; color: var(--fg-2); }
+.email-body p { margin-bottom: 10px; }
+.email-body .hl { color: var(--fg); }
+.email-body .tok { color: var(--accent); background: var(--accent-dim); border-radius: 3px; padding: 0 3px; font-family: var(--font-mono); font-size: 11px; }
+.email-body .sig-off { color: var(--muted); }
+
+.insp-foot { padding: 12px 16px 16px; border-top: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: 9px; }
+.insp-foot .row { display: flex; gap: 8px; }
+.btn {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+  font-size: 12.5px; font-weight: 590; padding: 9px 12px; border-radius: var(--radius-sm);
+  cursor: pointer; border: 1px solid var(--border); background: rgba(255,255,255,0.03); color: var(--fg-2);
+  transition: all 140ms ease; font-family: var(--font-body);
+}
+.btn svg { width: 14px; height: 14px; }
+.btn:hover { background: rgba(255,255,255,0.06); color: var(--fg); }
+.btn.primary { background: var(--accent); color: var(--accent-on); border-color: transparent; }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.primary.approved { background: var(--live); color: #06140d; }
+.btn:active { transform: scale(0.98); }
+.auto-note { font-family: var(--font-mono); font-size: 10px; color: var(--meta); text-align: center; display:flex; align-items:center; justify-content:center; gap:6px; }
+.auto-note .ad { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); animation: blink 1.4s infinite; }
+
+/* ── animations ── */
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.35} }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse-ring { 0%{ transform: scale(1); opacity:.8 } 100%{ transform: scale(1.45); opacity: 0 } }
+@keyframes travel { from { left: 0; } to { left: calc(100% - 6px); } }
+@keyframes rise { from { opacity:0; transform: translateY(6px) scale(.99);} to { opacity:1; transform:none;} }
+.card { animation: rise .35s ease backwards; }
+
+@media (max-width: 1180px) {
+  .app { grid-template-columns: 200px 1fr; }
+  .canvas { display: none; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ════ LEFT RAIL ════ -->
+  <aside class="rail">
+    <div class="brand">
+      <span class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#ff6a2b" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="9" stroke-opacity="0.45"/></svg>
+      </span>
+      <span class="name"><b>INTER</b>CEPT</span>
+    </div>
+
+    <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/></svg>Home</div>
+    <div class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9" stroke-opacity="0.5"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r="1.2" fill="currentColor"/></svg>Runs<span class="count">3</span></div>
+    <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5h18v11H3z"/><path d="m3 7 9 6 9-6"/></svg>Inbox<span class="count">12</span></div>
+    <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg>Content</div>
+
+    <div class="rail-group-label">Recent runs</div>
+    <div class="recent">
+      <div class="run-link current">
+        <span class="run-dot live"></span>
+        <span class="run-meta"><div class="run-title">Find GTM buyers · INTERCEPT</div><div class="run-sub">live · 247 sourced</div></span>
+      </div>
+      <div class="run-link">
+        <span class="run-dot amber"></span>
+        <span class="run-meta"><div class="run-title">Outbound · Series-A SaaS</div><div class="run-sub">writing · 31 drafts</div></span>
+      </div>
+      <div class="run-link">
+        <span class="run-dot done"></span>
+        <span class="run-meta"><div class="run-title">Ad refresh · Q3 launch</div><div class="run-sub">done · 9 variants</div></span>
+      </div>
+      <div class="run-link">
+        <span class="run-dot done"></span>
+        <span class="run-meta"><div class="run-title">Discovery · churned accts</div><div class="run-sub">done · 18 calls</div></span>
+      </div>
+      <div class="run-link">
+        <span class="run-dot done"></span>
+        <span class="run-meta"><div class="run-title">Content calendar · Aug</div><div class="run-sub">done · 24 posts</div></span>
+      </div>
+    </div>
+
+    <div class="rail-user">
+      <span class="avatar">VJ</span>
+      <span><div class="who">Vidit Jain</div><div class="org">intercept.run</div></span>
+    </div>
+  </aside>
+
+  <!-- ════ CENTER CHAT ════ -->
+  <section class="chat">
+    <div class="chat-head">
+      <div style="min-width:0">
+        <div class="ttl">Find GTM buyers · INTERCEPT</div>
+        <div class="sub">run #4812 · started 4m ago</div>
+      </div>
+      <span class="pill running" style="margin-left:auto"><span class="pdot"></span>RUNNING</span>
+    </div>
+
+    <div class="chat-scroll" id="chatScroll">
+      <div class="msg user">
+        <div class="msg-role"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.3 3-5.5 7-5.5s7 2.2 7 5.5"/></svg></span>You</div>
+        <div class="bubble-user">find customers for <span class="paste">INTERCEPT</span> — B2B founders &amp; GTM/sales teams who want one tool to run go-to-market. Pasted: <span class="paste">linear.app/customers</span></div>
+      </div>
+
+      <div class="msg agent">
+        <div class="msg-role"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3"/></svg></span>Agent · reasoning</div>
+        <div class="reason" id="reason">
+          <div class="rstep" data-done><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17l9-10"/></svg></span><div>Parsed intent → <b>net-new outbound</b>. Reference <span class="num">linear.app</span> read: dev-tools, PLG, design-led ICP.</div></div>
+          <div class="rstep" data-done><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17l9-10"/></svg></span><div>Built ICP: <b>Seed–Series B</b> B2B SaaS, 10–80 headcount, founder-led GTM, US/EU. <span class="num">7</span> intent signals weighted.</div></div>
+          <div class="rstep" data-done><span class="tick"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17l9-10"/></svg></span><div>Dispatched swarm of <b>6 agents</b>. Sourcer + enricher complete — <span class="num">247</span> matched, <span class="num">204</span> enriched.</div></div>
+          <div class="rstep"><span class="spin"></span><div><b>Qualifier</b> scoring intent (hiring, funding, tech-stack, web activity)… <span class="num">156</span>/204 graded.</div></div>
+          <div class="rstep"><span class="spin"></span><div><b>Writer</b> drafting personalized first-touch from live signals. <span class="num">38</span> drafts queued for approval.</div></div>
+          <div class="rstep"><div style="width:13px"></div><div style="color:var(--meta)">Sender + follower on standby — release on your approval, or set auto-send threshold.</div></div>
+        </div>
+
+        <div class="dispatch-card" style="margin-top:16px">
+          <div class="dc-h"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M4 12h16M4 17h10"/></svg>Run parameters</div>
+          <div class="dc-grid">
+            <div class="dc-row"><span>ICP match</span><b>247</b></div>
+            <div class="dc-row"><span>Ready-to-buy</span><b style="color:var(--live)">41</b></div>
+            <div class="dc-row"><span>Channel</span><b>email · 24/7</b></div>
+            <div class="dc-row"><span>Daily cap</span><b>120/day</b></div>
+            <div class="dc-row"><span>Auto-send</span><b style="color:var(--accent)">score ≥ 90</b></div>
+            <div class="dc-row"><span>Tone</span><b>founder-direct</b></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-input-wrap">
+      <div class="chat-input">
+        <textarea id="chatInput" rows="1" placeholder="Type or paste anything — a URL, a company, “book demos with replied prospects”…"></textarea>
+        <button class="send-btn" id="sendBtn" title="Send"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12 16-8-6 16-3-7z"/></svg></button>
+      </div>
+      <div class="input-hint">
+        <span><span class="kbd">⏎</span> dispatch</span>
+        <span><span class="kbd">⇧⏎</span> newline</span>
+        <span>chat is the only control surface</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════ RIGHT CANVAS ════ -->
+  <section class="canvas">
+    <div class="canvas-head">
+      <div>
+        <div class="ch-title">Pipeline</div>
+        <div class="ch-sub">247 prospects · live</div>
+      </div>
+      <div class="canvas-tabs">
+        <div class="ctab active">Pipeline</div>
+        <div class="ctab">Threads</div>
+        <div class="ctab">Creative</div>
+        <div class="ctab">Calendar</div>
+      </div>
+    </div>
+
+    <!-- swarm strip -->
+    <div class="swarm">
+      <div class="swarm-label">
+        <span class="sl-t">Agent swarm</span>
+        <span class="sl-stat"><b>2</b> done · <span style="color:var(--accent)">2</span> active · 2 queued</span>
+      </div>
+      <div class="swarm-row" id="swarmRow">
+        <div class="node done"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="6"/><path d="m20 20-3.5-3.5"/></svg></div><div class="nlabel">sourcer</div><div class="ncount">247</div></div>
+        <div class="edge done"></div>
+        <div class="node done"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 7v6c0 4.5 3.5 7 8 8 4.5-1 8-3.5 8-8V7z"/><path d="m9 12 2 2 4-4"/></svg></div><div class="nlabel">enricher</div><div class="ncount">204</div></div>
+        <div class="edge flow"></div>
+        <div class="node active"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 3 5-7 4 4"/><path d="M3 21h18"/></svg></div><div class="nlabel">qualifier</div><div class="ncount" id="qcount">156</div></div>
+        <div class="edge flow"></div>
+        <div class="node active"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l3.5-1 11-11-2.5-2.5-11 11z"/><path d="M14 6.5 17.5 10"/></svg></div><div class="nlabel">writer</div><div class="ncount" id="wcount">38</div></div>
+        <div class="edge"></div>
+        <div class="node queued"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m4 12 16-8-6 16-3-7z"/></svg></div><div class="nlabel">sender</div><div class="ncount">0</div></div>
+        <div class="edge"></div>
+        <div class="node queued"><div class="ring"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v4h4"/></svg></div><div class="nlabel">follower</div><div class="ncount">0</div></div>
+      </div>
+    </div>
+
+    <!-- kanban + inspector -->
+    <div class="canvas-body">
+      <div class="kanban-wrap">
+        <div class="kanban" id="kanban"></div>
+      </div>
+
+      <aside class="inspector">
+        <div class="insp-head">
+          <div class="ih-k">Draft · awaiting approval</div>
+          <div class="insp-prospect">
+            <span class="ip-av" id="ipAv">DK</span>
+            <div style="min-width:0">
+              <div class="ip-name" id="ipName">Dana Kessler</div>
+              <div class="ip-meta" id="ipMeta">VP Growth · Cadre (Series A)</div>
+            </div>
+            <div class="ip-score"><div class="lab">intent</div><div class="val" id="ipScore">96</div></div>
+          </div>
+        </div>
+
+        <div class="insp-body">
+          <div class="signal-row" id="signals">
+            <span class="sig"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17l9-10"/></svg>raised $14M · 9d ago</span>
+            <span class="sig"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17l9-10"/></svg>hiring 3 SDRs</span>
+            <span class="sig"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17l9-10"/></svg>no GTM stack</span>
+            <span class="sig"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17l9-10"/></svg>visited pricing 2×</span>
+          </div>
+
+          <div class="email">
+            <div class="email-meta">
+              <div class="em-line"><span>To</span><b id="emTo">dana@cadre.io</b></div>
+              <div class="em-line em-subject"><span>Subj</span><b id="emSubj">$14M in — who's running outbound?</b></div>
+            </div>
+            <div class="email-body" id="emBody">
+              <p>Hi Dana — saw <span class="hl">Cadre closed its Series A last week</span>, congrats. With <span class="tok">3 SDR reqs</span> open, you're about to spend 6 months hiring before a single sequence ships.</p>
+              <p>INTERCEPT runs the whole motion from one chat: it sources your ICP, enriches and scores intent, writes the first touch, and sends 24/7 — you just approve. Teams like yours book meetings in <span class="hl">week one, not quarter two</span>.</p>
+              <p>Worth 15 minutes to point it at Cadre's ICP and watch it fill a pipeline live?</p>
+              <p class="sig-off">— sent by INTERCEPT on behalf of Vidit</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="insp-foot">
+          <div class="row">
+            <button class="btn" id="editBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l3.5-1 11-11-2.5-2.5-11 11z"/></svg>Edit</button>
+            <button class="btn primary" id="approveBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17l9-10"/></svg>Approve &amp; send</button>
+          </div>
+          <div class="auto-note"><span class="ad"></span>auto-send armed for intent ≥ 90 · 12 in queue</div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ── pipeline data ── */
+  var COLS = [
+    { key:"sourced",   dot:"var(--meta)" },
+    { key:"enriched",  dot:"var(--fg-2)" },
+    { key:"qualified", dot:"var(--accent)" },
+    { key:"contacted", dot:"var(--accent)" },
+    { key:"replied",   dot:"var(--live)" },
+    { key:"booked",    dot:"var(--live)" }
+  ];
+
+  function P(name, role, co, score, col, state){ return {name:name,role:role,co:co,score:score,col:col,state:state}; }
+  function initials(n){ var p=n.split(" "); return (p[0][0]+(p[1]?p[1][0]:"")).toUpperCase(); }
+  function band(s){ return s>=90 ? "hot" : s>=72 ? "warm" : "cool"; }
+  function bandColor(s){ return s>=90 ? "var(--live)" : s>=72 ? "var(--accent)" : "var(--muted)"; }
+
+  var PROSPECTS = [
+    P("Dana Kessler","VP Growth","Cadre",96,"qualified","scored · ready_to_buy"),
+    P("Marcus Vo","Founder, CEO","Loopwork",94,"contacted","sent 1h ago"),
+    P("Priya Anand","Head of Sales","Northwind",91,"replied","replied 12m ago"),
+    P("Tom Reilly","Co-founder","Staknote",88,"qualified","scored"),
+    P("Elena Sørensen","RevOps Lead","Briefly",84,"contacted","sent 3h ago"),
+    P("Jordan Pike","Founder","Milepost",79,"qualified","scored"),
+    P("Sana Iqbal","GTM Lead","Quanta",97,"replied","booked pending"),
+    P("Devon Cole","CEO","Forklane",73,"sourced","matched ICP"),
+    P("Aiko Tanaka","Head of Demand","Cleo",90,"booked","demo · Thu 2pm"),
+    P("Ben Walsh","Founder","Saltbox",68,"enriched","enriched"),
+    P("Rosa Méndez","VP Sales","Tideway",82,"contacted","sent 5h ago"),
+    P("Kai Nielsen","Co-founder","Drafty",76,"sourced","matched ICP"),
+    P("Hana Park","Growth","Ember",87,"qualified","scored"),
+    P("Liam Cho","CEO","Northbeam",92,"replied","replied 40m ago"),
+    P("Owen Frost","RevOps","Pacta",64,"enriched","enriched"),
+    P("Maya Brennan","Founder","Hatchway",95,"booked","demo · Fri 11am"),
+    P("Sam Okafor","Head of GTM","Verge",81,"sourced","matched ICP"),
+    P("Nora Vance","VP Growth","Cohort",70,"sourced","matched ICP")
+  ];
+
+  var kanban = document.getElementById("kanban");
+  COLS.forEach(function(c){
+    var items = PROSPECTS.filter(function(p){ return p.col===c.key; });
+    var col = document.createElement("div");
+    col.className = "col";
+    col.innerHTML =
+      '<div class="col-head"><span class="ch-dot" style="background:'+c.dot+'"></span>'+
+      '<span class="ch-name">'+c.key+'</span><span class="ch-n">'+items.length+'</span></div>'+
+      '<div class="col-cards"></div>';
+    var cards = col.querySelector(".col-cards");
+    items.forEach(function(p,i){
+      var card = document.createElement("div");
+      card.className = "card";
+      card.style.animationDelay = (i*40)+"ms";
+      card.innerHTML =
+        '<div class="c-top"><span class="c-av">'+initials(p.name)+'</span>'+
+        '<div class="c-id"><div class="c-name">'+p.name+'</div><div class="c-role">'+p.role+'</div></div></div>'+
+        '<div class="c-foot"><span class="c-co">'+p.co+'</span>'+
+        '<span class="score '+band(p.score)+'">'+p.score+'</span></div>'+
+        '<div class="c-state"><span class="s-dot" style="background:'+bandColor(p.score)+'"></span>'+p.state+'</div>';
+      card.addEventListener("click", function(){ selectProspect(p, card); });
+      cards.appendChild(card);
+    });
+    kanban.appendChild(col);
+  });
+
+  /* ── inspector select ── */
+  function selectProspect(p, card){
+    document.querySelectorAll(".card.sel").forEach(function(c){ c.classList.remove("sel"); });
+    card.classList.add("sel");
+    document.getElementById("ipAv").textContent = initials(p.name);
+    document.getElementById("ipName").textContent = p.name;
+    document.getElementById("ipMeta").textContent = p.role + " · " + p.co;
+    var sc = document.getElementById("ipScore");
+    sc.textContent = p.score;
+    sc.style.color = bandColor(p.score);
+    document.getElementById("emTo").textContent = p.name.split(" ")[0].toLowerCase()+"@"+p.co.toLowerCase().replace(/[^a-z]/g,"")+".io";
+    document.getElementById("emSubj").textContent = "For "+p.co+" — who's running outbound?";
+    resetApprove();
+  }
+
+  /* ── approve interaction ── */
+  var approveBtn = document.getElementById("approveBtn");
+  function resetApprove(){
+    approveBtn.classList.remove("approved");
+    approveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17l9-10"/></svg>Approve &amp; send';
+  }
+  approveBtn.addEventListener("click", function(){
+    if (approveBtn.classList.contains("approved")) return;
+    approveBtn.classList.add("approved");
+    approveBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5 10 17l9-10"/></svg>Sent · dispatched to sender';
+    // light up the sender node
+    var sender = document.querySelectorAll("#swarmRow .node")[4];
+    var edge = document.querySelectorAll("#swarmRow .edge")[3];
+    if (sender){ sender.classList.remove("queued"); sender.classList.add("active"); sender.querySelector(".ncount").textContent = "1"; }
+    if (edge){ edge.classList.add("flow"); }
+  });
+
+  /* ── stream reasoning steps in ── */
+  var steps = document.querySelectorAll("#reason .rstep");
+  steps.forEach(function(s, i){
+    if (s.hasAttribute("data-done")) { s.classList.add("show"); return; }
+    setTimeout(function(){ s.classList.add("show"); }, 500 + i*650);
+  });
+
+  /* ── live counters ticking (qualifier / writer working) ── */
+  var qc = document.getElementById("qcount"), wc = document.getElementById("wcount");
+  var q = 156, w = 38;
+  setInterval(function(){
+    if (q < 204){ q += Math.floor(Math.random()*3); if(q>204)q=204; qc.textContent = q; }
+    if (Math.random() > 0.6 && w < 60){ w += 1; wc.textContent = w; }
+  }, 1700);
+
+  /* ── chat input affordance ── */
+  var input = document.getElementById("chatInput");
+  input.addEventListener("input", function(){
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 120) + "px";
+  });
+  input.addEventListener("keydown", function(e){
+    if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); fakeSend(); }
+  });
+  document.getElementById("sendBtn").addEventListener("click", fakeSend);
+  function fakeSend(){
+    var v = input.value.trim(); if (!v) return;
+    input.value = ""; input.style.height = "auto";
+    var scroll = document.getElementById("chatScroll");
+    var m = document.createElement("div");
+    m.className = "msg user"; m.style.animation = "rise .35s ease";
+    m.innerHTML = '<div class="msg-role"><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.3 3-5.5 7-5.5s7 2.2 7 5.5"/></svg></span>You</div><div class="bubble-user">'+v.replace(/</g,"&lt;")+'</div>';
+    scroll.appendChild(m);
+    scroll.scrollTop = scroll.scrollHeight;
+  }
+
+  // select first card by default
+  var first = document.querySelector(".card");
+  if (first) first.classList.add("sel");
+})();
+</script>
+</body>
+</html>

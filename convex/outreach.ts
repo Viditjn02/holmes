@@ -194,3 +194,96 @@ export const outreachStatus = query({
     };
   },
 });
+
+// ===========================================================================
+// OUTBOUND EMAIL SEND (the `emails` surface — distinct from in-thread `drafts`).
+// The EmailQueue's per-row "Send" button calls this after a human approves an
+// email. Same hard gate: only an APPROVED email leaves the building, via the
+// same real AgentMail client. On success the email -> "sent" and its prospect
+// advances to "contacted".
+// ===========================================================================
+
+interface EmailSendContext {
+  emailId: Id<"emails">;
+  status: string;
+  subject: string;
+  body: string;
+  to?: string;
+  prospectId: Id<"prospects">;
+  prospectStage: string;
+  company: string;
+}
+
+export const loadEmailContext = internalQuery({
+  args: { emailId: v.id("emails") },
+  handler: async (ctx, { emailId }): Promise<EmailSendContext | null> => {
+    const email = await ctx.db.get(emailId);
+    if (!email) return null;
+    const prospect = await ctx.db.get(email.prospectId);
+    return {
+      emailId: email._id,
+      status: email.status,
+      subject: email.subject,
+      body: email.body,
+      to: email.to ?? prospect?.email ?? undefined,
+      prospectId: email.prospectId,
+      prospectStage: prospect?.stage ?? "sourced",
+      company: prospect?.company ?? "the prospect",
+    };
+  },
+});
+
+/**
+ * Send a single human-approved outbound email via AgentMail. Never throws —
+ * degrades to { sent:false, reason }. Idempotent for already-sent emails.
+ */
+export const sendApprovedEmail = action({
+  args: { emailId: v.id("emails") },
+  handler: async (
+    ctx,
+    { emailId },
+  ): Promise<{ sent: boolean; id?: string; alreadySent?: boolean; reason?: string }> => {
+    try {
+      const c = await ctx.runQuery(internal.outreach.loadEmailContext, { emailId });
+      if (!c) return { sent: false, reason: "Email not found." };
+      if (c.status === "sent" || c.status === "replied") {
+        return { sent: true, alreadySent: true };
+      }
+      if (c.status !== "approved") {
+        return { sent: false, reason: "Email must be approved before it can be sent." };
+      }
+
+      const result = await sendMessage({ to: c.to, subject: c.subject, text: c.body });
+      if (!result.sent) {
+        return { sent: false, reason: result.reason ?? "AgentMail did not send the message." };
+      }
+
+      await ctx.runMutation(internal.emails.setStatus, {
+        emailId,
+        status: "sent",
+        to: result.to ?? c.to,
+        sentAt: Date.now(),
+        agentmailId: result.id,
+        agentmailThreadId: result.threadId,
+      });
+      if (c.prospectStage !== "replied" && c.prospectStage !== "booked") {
+        await ctx.runMutation(internal.prospects.update, {
+          prospectId: c.prospectId,
+          stage: "contacted",
+        });
+      }
+      await ctx.runMutation(internal.events.log, {
+        agent: "sender",
+        prospectId: c.prospectId,
+        kind: "sent",
+        message: `Sent to ${result.to ?? c.to ?? c.company} · "${c.subject}"`,
+      });
+      return { sent: true, id: result.id };
+    } catch (err: unknown) {
+      return {
+        sent: false,
+        reason: err instanceof Error ? err.message : "Outreach failed unexpectedly.",
+      };
+    }
+  },
+});
