@@ -662,4 +662,17 @@ export default defineSchema({
       dimensions: 1536,
       filterFields: ["entityType"],
     }),
+
+  // ── SETTINGS · workspace singleton ───────────────────────────────────────
+  // A persisted singleton (key === "workspace") holding the DEFAULT business /
+  // target URL that quick-actions and URL-less CommandBar commands fire against.
+  // Read via settings.getSettings (always returns a value — seeds the default
+  // when unset); written via settings.setTargetUrl (normalizes host). Additive,
+  // disjoint from every other table. Public; never throws.
+  settings: defineTable({
+    key: v.literal("workspace"), // the singleton discriminator (always "workspace")
+    targetUrl: v.string(), // normalized host, e.g. "nolongerjobless.com"
+    targetLabel: v.optional(v.string()), // optional human label for the chip
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
 });

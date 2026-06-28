@@ -66,7 +66,9 @@ interface CanvasPanelProps {
 interface RunRef {
   runId: Id<"runs">;
   intent: Capability;
-  messageId: Id<"messages">;
+  // Only set for runs born from a chat message; a directly-fired manual run
+  // (a quick-action / dashboard track) has no spawning message.
+  messageId?: Id<"messages">;
 }
 
 function asCapability(intent?: string): Capability {
@@ -79,19 +81,20 @@ function capabilityTitle(intent: Capability): string {
   return ROUTER_INTENTS.find((r) => r.intent === intent)?.title ?? intent;
 }
 
-// Mode identity: a short, scannable name + the board noun it renders + the
+// Mode identity: the ONE canonical per-track name (matches the dashboard node
+// cards / quick-actions / sidebar verbatim) + the board noun it renders + the
 // pastel breadcrumb colour. Echoes the "Pipeline · Kanban" wayfinding pattern.
 const MODE_META: Record<Capability, { label: string; board: string; dot: string }> = {
   analyze: { label: "Full Sweep", board: "Overview", dot: "bg-block-lime" },
-  discovery: { label: "Discovery", board: "Threads", dot: "bg-block-mint" },
-  outbound: { label: "Outbound", board: "Pipeline", dot: "bg-block-lilac" },
+  discovery: { label: "Reading Minds", board: "Threads", dot: "bg-block-mint" },
+  outbound: { label: "Revenue on Autopilot", board: "Pipeline", dot: "bg-block-lilac" },
   outreach: { label: "Outreach", board: "Pipeline", dot: "bg-block-coral" },
-  competitor: { label: "Ad Intel", board: "Gallery", dot: "bg-block-pink" },
+  competitor: { label: "Ad Intelligence", board: "Gallery", dot: "bg-block-pink" },
   content: { label: "Ad Factory", board: "Studio", dot: "bg-block-cream" },
   replicate: { label: "Replicate", board: "Studio", dot: "bg-block-cream" },
-  social: { label: "Social", board: "Calendar", dot: "bg-block-navy" },
-  onboarding: { label: "Onboarding", board: "Tour", dot: "bg-block-lilac" },
-  scout: { label: "Scout", board: "Projects", dot: "bg-block-mint" },
+  social: { label: "Algorithm Hacking", board: "Calendar", dot: "bg-block-navy" },
+  onboarding: { label: "Zero to One", board: "Tour", dot: "bg-block-lilac" },
+  scout: { label: "GitHub Scout", board: "Projects", dot: "bg-block-mint" },
 };
 
 function modeMeta(intent: Capability) {
@@ -130,16 +133,29 @@ export default function CanvasPanel({
   const view = controlledView ?? localView;
   const setView = onView ?? setLocalView;
 
-  // Every run spawned in this conversation, in order.
+  // A directly-fired run (a dashboard quick-action / track) is not tied to any
+  // chat message, so fetch it on its own and fold it into the run list — this is
+  // what lets the landing "drill into the track's board" reuse this same canvas.
+  const focusedRunDoc = useQuery(
+    api.runs.getRun,
+    focusedRunId ? { runId: focusedRunId } : "skip",
+  );
+
+  // Every run spawned in this conversation, in order, plus any focused manual run.
   const runs: RunRef[] = useMemo(() => {
     const out: RunRef[] = [];
+    const seen = new Set<string>();
     for (const m of messages ?? []) {
-      if (m.role === "assistant" && m.runId) {
+      if (m.role === "assistant" && m.runId && !seen.has(m.runId)) {
         out.push({ runId: m.runId, intent: asCapability(m.intent), messageId: m._id });
+        seen.add(m.runId);
       }
     }
+    if (focusedRunId && focusedRunDoc && !seen.has(focusedRunId)) {
+      out.push({ runId: focusedRunId, intent: asCapability(focusedRunDoc.intent) });
+    }
     return out;
-  }, [messages]);
+  }, [messages, focusedRunId, focusedRunDoc]);
 
   const activeRun =
     runs.find((r) => r.runId === focusedRunId) ?? runs[runs.length - 1] ?? null;
