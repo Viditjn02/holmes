@@ -24,9 +24,9 @@ interface PitchLabProps {
 }
 
 function scoreTone(score: number): { ring: string; text: string; label: string } {
-  if (score >= 65) return { ring: "#34d399", text: "text-good", label: "likely to reply" };
-  if (score >= 40) return { ring: "#fbbf24", text: "text-amber-400", label: "on the fence" };
-  return { ring: "#fb7185", text: "text-rose-400", label: "would ignore" };
+  if (score >= 65) return { ring: "#1ea64a", text: "text-success", label: "likely to reply" };
+  if (score >= 40) return { ring: "#d97706", text: "text-amber-600", label: "on the fence" };
+  return { ring: "#e11d48", text: "text-rose-600", label: "would ignore" };
 }
 
 function Gauge({ score }: { score: number }) {
@@ -35,7 +35,7 @@ function Gauge({ score }: { score: number }) {
   return (
     <div className="relative h-14 w-14 shrink-0">
       <svg viewBox="0 0 36 36" className="h-14 w-14 -rotate-90">
-        <circle cx="18" cy="18" r="16" fill="none" stroke="#26262b" strokeWidth="3" />
+        <circle cx="18" cy="18" r="16" fill="none" stroke="#e6e6e6" strokeWidth="3" />
         <circle
           cx="18"
           cy="18"
@@ -57,9 +57,9 @@ function Gauge({ score }: { score: number }) {
 
 function SentimentChip({ sentiment }: { sentiment: string }) {
   const map: Record<string, string> = {
-    positive: "border-good/30 bg-good/10 text-good",
-    neutral: "border-amber-400/30 bg-amber-400/10 text-amber-300",
-    negative: "border-rose-400/30 bg-rose-400/10 text-rose-300",
+    positive: "border-success/30 bg-success/10 text-success",
+    neutral: "border-amber-500/30 bg-amber-500/10 text-amber-700",
+    negative: "border-rose-500/30 bg-rose-500/10 text-rose-700",
   };
   return (
     <span
@@ -110,18 +110,18 @@ function SimCard({ sim }: { sim: Sim }) {
   }, [reSim, sim.emailId]);
 
   return (
-    <div className="rounded-xl border border-line bg-panel/70 p-3">
+    <div className="rounded-xl border border-hairline bg-surface-soft p-3">
       <div className="flex items-start gap-3">
         <Gauge score={sim.score} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <SentimentChip sentiment={sim.sentiment} />
             <span className={cn("text-[10px] font-semibold", tone.text)}>{tone.label}</span>
-            <span className="text-[10px] text-white/30">· {sim.replyLikelihood}% reply odds</span>
+            <span className="text-[10px] text-ink/40">· {sim.replyLikelihood}% reply odds</span>
           </div>
           <button onClick={() => setOpen((v) => !v)} className="mt-1.5 block min-w-0 max-w-full text-left">
-            <p className="truncate text-[13px] font-semibold text-zinc-100">{sim.subject}</p>
-            <p className="mt-0.5 truncate text-[11px] text-zinc-500">
+            <p className="truncate text-[13px] font-semibold text-ink">{sim.subject}</p>
+            <p className="mt-0.5 truncate text-[11px] text-ink/55">
               twin: {sim.prospectName ?? sim.prospectCompany ?? "prospect"}
               {sim.model ? ` · ${sim.model}` : ""}
             </p>
@@ -130,14 +130,14 @@ function SimCard({ sim }: { sim: Sim }) {
       </div>
 
       {sim.predictedReply ? (
-        <div className="mt-2.5 rounded-lg border border-line bg-ink/50 p-2.5">
-          <p className="text-[9.5px] font-semibold uppercase tracking-wide text-white/35">Predicted reply</p>
-          <p className="mt-1 whitespace-pre-wrap text-[12.5px] italic leading-relaxed text-zinc-300">
+        <div className="mt-2.5 rounded-lg border border-hairline bg-block-cream/50 p-2.5">
+          <p className="text-[9.5px] font-semibold uppercase tracking-wide text-ink/45">Predicted reply</p>
+          <p className="mt-1 whitespace-pre-wrap text-[12.5px] italic leading-relaxed text-ink/80">
             “{sim.predictedReply}”
           </p>
         </div>
       ) : (
-        <p className="mt-2.5 text-[11.5px] text-rose-300/80">
+        <p className="mt-2.5 text-[11.5px] text-rose-600">
           The twin would not reply to this draft — too generic to earn a response.
         </p>
       )}
@@ -147,7 +147,7 @@ function SimCard({ sim }: { sim: Sim }) {
           {sim.objections.map((o, i) => (
             <span
               key={i}
-              className="rounded-full border border-rose-400/25 bg-rose-400/5 px-2 py-0.5 text-[10.5px] text-rose-200/90"
+              className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-0.5 text-[10.5px] text-rose-700"
             >
               {o}
             </span>
@@ -158,8 +158,8 @@ function SimCard({ sim }: { sim: Sim }) {
       {open && sim.suggestions.length > 0 && (
         <ul className="mt-2.5 space-y-1">
           {sim.suggestions.map((s, i) => (
-            <li key={i} className="flex gap-2 text-[12px] text-zinc-400">
-              <span className="mt-px text-accent">→</span>
+            <li key={i} className="flex gap-2 text-[12px] text-ink/70">
+              <span className="mt-px text-primary">→</span>
               <span>{s}</span>
             </li>
           ))}
@@ -171,31 +171,31 @@ function SimCard({ sim }: { sim: Sim }) {
           <button
             onClick={onImprove}
             disabled={!!busy}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink transition-transform hover:scale-[1.02] disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-[12px] font-semibold text-on-primary transition-transform hover:scale-[1.02] disabled:opacity-50"
           >
             {busy === "improve" ? "Rewriting…" : "Improve draft"}
           </button>
         ) : (
-          <span className="rounded-lg bg-white/5 px-2 py-1 text-[10.5px] font-medium uppercase tracking-wide text-white/40">
+          <span className="rounded-lg bg-canvas px-2 py-1 text-[10.5px] font-medium uppercase tracking-wide text-ink/55 ring-1 ring-hairline">
             {sim.emailStatus}
           </span>
         )}
         <button
           onClick={onResim}
           disabled={!!busy}
-          className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-zinc-300 ring-1 ring-line transition-colors hover:bg-white/5 disabled:opacity-50"
+          className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-ink/70 ring-1 ring-hairline transition-colors hover:bg-ink/5 disabled:opacity-50"
         >
           {busy === "resim" ? "…" : "Re-simulate"}
         </button>
         {sim.suggestions.length > 0 && (
           <button
             onClick={() => setOpen((v) => !v)}
-            className="text-[11px] text-white/40 underline-offset-2 hover:text-white/70 hover:underline"
+            className="text-[11px] text-ink/55 underline-offset-2 hover:text-ink hover:underline"
           >
             {open ? "hide" : `${sim.suggestions.length} suggestion${sim.suggestions.length > 1 ? "s" : ""}`}
           </button>
         )}
-        {note && <span className="text-[11px] text-zinc-500">{note}</span>}
+        {note && <span className="text-[11px] text-ink/55">{note}</span>}
       </div>
     </div>
   );
@@ -225,7 +225,7 @@ export default function PitchLab({ runId }: PitchLabProps) {
     return (
       <section className="space-y-2">
         {[0, 1].map((i) => (
-          <div key={i} className="h-24 animate-pulse rounded-xl border border-line bg-panel/50" />
+          <div key={i} className="h-24 animate-pulse rounded-xl border border-hairline bg-surface-soft" />
         ))}
       </section>
     );
@@ -237,32 +237,32 @@ export default function PitchLab({ runId }: PitchLabProps) {
     <section className="space-y-3">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h3 className="text-[15px] font-semibold text-zinc-50">Pitch Lab · digital twin</h3>
-          <p className="text-[12.5px] text-zinc-500">
+          <h3 className="text-[15px] font-semibold text-ink">Pitch Lab · digital twin</h3>
+          <p className="text-[12.5px] text-ink/55">
             A simulated prospect reads each draft, predicts their reply, and scores it before send.
           </p>
         </div>
         {sims.length > 0 ? (
-          <span className="rounded-full bg-accent/15 px-3 py-1 text-[11px] font-semibold text-accent ring-1 ring-accent/30">
+          <span className="rounded-full bg-block-lilac px-3 py-1 text-[11px] font-semibold text-ink ring-1 ring-ink/10">
             top {best}/100
           </span>
         ) : null}
       </div>
 
       {sims.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-line bg-panel/40 p-8 text-center">
-          <p className="text-[13px] text-zinc-400">
+        <div className="rounded-2xl border border-dashed border-hairline bg-surface-soft p-8 text-center">
+          <p className="text-[13px] text-ink/70">
             Simulate the prospect&apos;s reaction to each drafted email — see their predicted reply,
             objections, and a 0-100 reply-likelihood score before anything ships.
           </p>
           <button
             onClick={onSimulate}
             disabled={running}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2 text-[12.5px] font-semibold text-ink transition-transform hover:scale-[1.02] disabled:opacity-50"
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-[12.5px] font-semibold text-on-primary transition-transform hover:scale-[1.02] disabled:opacity-50"
           >
             {running ? "Simulating…" : "Run pre-send simulation"}
           </button>
-          {note && <p className="mt-2 text-[11px] text-zinc-500">{note}</p>}
+          {note && <p className="mt-2 text-[11px] text-ink/55">{note}</p>}
         </div>
       ) : (
         <>
@@ -275,11 +275,11 @@ export default function PitchLab({ runId }: PitchLabProps) {
             <button
               onClick={onSimulate}
               disabled={running}
-              className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-zinc-300 ring-1 ring-line transition-colors hover:bg-white/5 disabled:opacity-50"
+              className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-ink/70 ring-1 ring-hairline transition-colors hover:bg-ink/5 disabled:opacity-50"
             >
               {running ? "Re-simulating…" : "Re-simulate all drafts"}
             </button>
-            {note && <span className="text-[11px] text-zinc-500">{note}</span>}
+            {note && <span className="text-[11px] text-ink/55">{note}</span>}
           </div>
         </>
       )}

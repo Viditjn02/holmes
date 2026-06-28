@@ -3,12 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import type { Id } from "@/convex/_generated/dataModel";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
+import type { Doc, Id } from "@/convex/_generated/dataModel";
 import CommandSidebar from "@/components/CommandSidebar";
 import ChatPanel from "@/components/ChatPanel";
 import CanvasPanel, { type CanvasView } from "@/components/CanvasPanel";
@@ -18,6 +13,7 @@ import BlipCompanion from "@/components/blip/BlipCompanion";
 import DashboardHome from "@/components/DashboardHome";
 import QuickActions from "@/components/QuickActions";
 import CommandBar from "@/components/CommandBar";
+import EmailDesigner from "@/components/EmailDesigner";
 import { sendMessageRef } from "@/components/chatApi";
 import { type Capability, type Intent, spawnsRun } from "@/lib/contract";
 import { cn } from "@/lib/utils";
@@ -58,6 +54,9 @@ export default function Home() {
   const [activeTrack, setActiveTrack] = useState<Intent | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [canvasView, setCanvasView] = useState<CanvasView>("run");
+  // The workspace shows a FULL-WIDTH canvas; the chat history / full sequence is
+  // opt-in via this right-hand drawer (reuses ChatPanel), not a permanent column.
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // The persisted default target URL (always populated — getSettings seeds it).
   const settings = useQuery(api.settings.getSettings, {});
@@ -67,11 +66,17 @@ export default function Home() {
   const createRun = useMutation(api.runs.createRun);
   const send = useMutation(sendMessageRef);
 
+  // Latest runs (newest-first). Lets the sidebar track rows NAVIGATE to a track's
+  // existing work instead of always starting a brand-new run. (Convex shares this
+  // subscription with the dashboard's identical listRuns query — no extra cost.)
+  const runs = useQuery(api.runs.listRuns, {}) as Doc<"runs">[] | undefined;
+
   // ── navigation helpers ────────────────────────────────────────────────────
   const goDashboard = useCallback(() => {
     setSurface("dashboard");
     setActiveTrack(null);
     setCanvasView("run");
+    setHistoryOpen(false);
   }, []);
 
   const selectConversation = useCallback((id: Id<"conversations">) => {
@@ -136,6 +141,20 @@ export default function Home() {
     setSurface("workspace");
   }, []);
 
+  // Sidebar track nav = "take me to that track's work". If a run already exists
+  // for the intent, SHOW its latest board (consistent with the dashboard nodes);
+  // only start a fresh run when there's nothing there yet. (Quick-action cards
+  // still always FIRE — that's the explicit "run this play now" gesture.)
+  const goToTrack = useCallback(
+    (intent: Intent) => {
+      if (!spawnsRun(intent)) return; // brain/chat never spawn a run
+      const latest = (runs ?? []).find((r) => r.intent === intent);
+      if (latest) openRun(latest._id, intent);
+      else void fireTrack(intent);
+    },
+    [runs, openRun, fireTrack],
+  );
+
   // ── CommandBar → existing chat router (send) ───────────────────────────────
   // Throwing keeps the CommandBar's draft so the user can retry; on success we
   // hand off to the conversation in the workspace.
@@ -169,7 +188,7 @@ export default function Home() {
           activeId={conversationId}
           onSelectConversation={selectConversation}
           onNewChat={newChat}
-          onFireTrack={fireTrack}
+          onSelectTrack={goToTrack}
           activeTrack={activeTrack}
           brainActive={surface === "workspace" && canvasView === "brain"}
           onOpenBrain={openBrain}
@@ -190,43 +209,89 @@ export default function Home() {
           onCommand={handleCommand}
         />
       ) : (
-        <div className="min-w-0 flex-1">
-          <ResizablePanelGroup direction="horizontal" autoSaveId="intercept-split">
-            <ResizablePanel defaultSize={38} minSize={28} maxSize={58} className="min-w-0">
-              <PanelBoundary label="Starting the chat…">
-                <ChatPanel
-                  conversationId={conversationId}
-                  setConversationId={(id) => setConversationId(id)}
-                  focusedRunId={focusedRunId}
-                  onFocusRun={focusRun}
-                />
-              </PanelBoundary>
-            </ResizablePanel>
+        <div className="relative min-w-0 flex-1">
+          {/* FULL-WIDTH live canvas — the boards take the whole surface. No
+              permanent chat column; the run just runs in front of you. */}
+          <PanelBoundary label="Waking the canvas…">
+            <CanvasPanel
+              conversationId={conversationId}
+              focusedRunId={focusedRunId}
+              onFocusRun={focusRun}
+              view={canvasView}
+              onView={setCanvasView}
+            />
+          </PanelBoundary>
 
-            <ResizableHandle />
+          {/* Floating command bar over the canvas (mirrors the dashboard). */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
+            <CommandBar targetUrl={targetUrl} onSubmit={handleCommand} />
+          </div>
 
-            <ResizablePanel defaultSize={62} minSize={42} className="min-w-0">
-              <PanelBoundary label="Waking the canvas…">
-                <CanvasPanel
-                  conversationId={conversationId}
-                  focusedRunId={focusedRunId}
-                  onFocusRun={focusRun}
-                  view={canvasView}
-                  onView={setCanvasView}
-                />
-              </PanelBoundary>
-            </ResizablePanel>
-          </ResizablePanelGroup>
+          {/* History / Sequence — opt-in drawer button (bottom-left so it clears
+              the centred command bar + the corner Blip). */}
+          <button
+            type="button"
+            onClick={() => setHistoryOpen(true)}
+            title="Open the chat history / full sequence"
+            className="glass-1 pointer-events-auto absolute bottom-6 left-4 z-30 inline-flex items-center gap-1.5 rounded-pill border border-hairline px-3 py-2 text-[12px] font-fig-link text-ink shadow-glass-1 transition-colors hover:bg-surface-soft"
+          >
+            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-ink/60" aria-hidden>
+              <path d="M4 6h16M4 12h16M4 18h10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
+            Sequence
+          </button>
+
+          {/* The chat history / full sequence as a right slide-over (reuses
+              ChatPanel). Default closed: the user just watches the task run. */}
+          {historyOpen && (
+            <div className="absolute inset-0 z-40 flex">
+              <button
+                type="button"
+                aria-label="Close history"
+                onClick={() => setHistoryOpen(false)}
+                className="flex-1 bg-ink/15 backdrop-blur-[1px]"
+              />
+              <aside className="animate-drawer-in glass-1 flex h-full w-full max-w-[440px] flex-col border-l border-hairline">
+                <header className="flex shrink-0 items-center justify-between border-b border-hairline px-4 py-2.5">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink/45">
+                    Sequence · chat history
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setHistoryOpen(false)}
+                    aria-label="Close"
+                    className="flex h-7 w-7 items-center justify-center rounded-full text-ink/55 transition-colors hover:bg-canvas hover:text-ink"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
+                      <path d="M6 6l12 12M18 6 6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </header>
+                <div className="min-h-0 flex-1">
+                  <PanelBoundary label="Loading the chat…">
+                    <ChatPanel
+                      conversationId={conversationId}
+                      setConversationId={(id) => setConversationId(id)}
+                      focusedRunId={focusedRunId}
+                      onFocusRun={focusRun}
+                    />
+                  </PanelBoundary>
+                </div>
+              </aside>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Blip — a fixed bottom-right companion that lights up on the swarm's
-          wins. Pure delight; pointer-events-none except the sprite. */}
+      {/* Blip — the fixed bottom-right companion. Shown ONLY when the sidebar is
+          collapsed (the sidebar Blip takes over when expanded), so exactly one
+          Blip is ever visible. Pure delight; pointer-events-none except the sprite. */}
       <BlipCompanion
         runId={focusedRunId}
         conversationId={conversationId}
         onFocusRun={focusRun}
         onOpenBrain={openBrain}
+        hidden={!collapsed}
       />
 
       {/* ⌘K command palette — mounted once; owns its own global listener. */}
@@ -241,7 +306,41 @@ export default function Home() {
         }}
         onToggleSidebar={() => setCollapsed((v) => !v)}
       />
+
+      {/* Email Designer — a global drawer; opens on the outreach "Design email"
+          action (intercept:open-email-designer). Renders nothing until then. */}
+      <EmailDesigner />
     </main>
+  );
+}
+
+// ----------------------------------------------------------------------------
+// AutonomyToggle — the 24/7 switch. Reads/writes the convex `settings` singleton
+// directly (self-contained). ON → INTERCEPT keeps the radar + outreach running;
+// OFF (default) → each play runs once and stops.
+// ----------------------------------------------------------------------------
+function AutonomyToggle() {
+  const settings = useQuery(api.settings.getSettings, {});
+  const setAutonomous = useMutation(api.settings.setAutonomous);
+  const on = settings?.autonomous ?? false;
+  return (
+    <button
+      type="button"
+      onClick={() => void setAutonomous({ autonomous: !on }).catch(() => {})}
+      title="24/7 autonomous mode — ON: keep monitoring + generating outreach; OFF: each play runs once and stops."
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-pill border px-2.5 py-1.5 font-mono text-[10px] uppercase tracking-wide transition-colors",
+        on
+          ? "border-success/40 bg-success/10 text-ink"
+          : "border-hairline bg-surface-soft text-ink/55 hover:text-ink",
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn("h-1.5 w-1.5 rounded-full", on ? "animate-pulse bg-success" : "bg-ink/25")}
+      />
+      24/7 {on ? "On" : "Off"}
+    </button>
   );
 }
 
@@ -271,23 +370,27 @@ function DashboardSurface({
         <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink/45">
           INTERCEPT · GTM Command Center
         </p>
-        <TargetChip value={targetUrl} onSave={onSaveTarget} />
+        <div className="flex items-center gap-2">
+          <AutonomyToggle />
+          <TargetChip value={targetUrl} onSave={onSaveTarget} />
+        </div>
       </header>
 
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        {/* live node stat cards + agent feed */}
-        <div className="min-h-0 flex-[1.45] border-b border-hairline">
+      <div className="relative min-h-0 flex-1">
+        {/* The COMPACT node cards + the fire-a-play menu share ONE scroll (the
+            menu is passed as children), with the live-activity feed as a side
+            rail — so the cards are never trapped in a cramped inner scroll.
+            Wrapped in a boundary so any query throw degrades, never white-screens. */}
+        <PanelBoundary label="Loading the command center…">
           <DashboardHome
             onOpenTrack={onOpenTrack}
             onOpenRun={onOpenRun}
             onOpenBrain={onOpenBrain}
-          />
-        </div>
-
-        {/* fire-a-play quick-action menu */}
-        <div className="col-scroll min-h-0 flex-1 overflow-y-auto px-8 pb-28 pt-6">
-          <QuickActions onFire={onOpenTrack} targetUrl={targetUrl} />
-        </div>
+            targetUrl={targetUrl}
+          >
+            <QuickActions onFire={onOpenTrack} targetUrl={targetUrl} />
+          </DashboardHome>
+        </PanelBoundary>
 
         {/* floating command bar */}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">

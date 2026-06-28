@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import type { Id } from "@/convex/_generated/dataModel";
+import type { EmailStatus } from "@/lib/contract";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "./format";
 import { EMAIL_STATUS_META, tintStyle } from "./pipelineMeta";
@@ -14,10 +15,33 @@ import {
 import type { EmailDoc } from "./types";
 
 // ============================================================================
-// EmailQueue — the 24/7 outreach approval gate. Signal-grounded drafts from the
+// EmailQueue — the 24/7 outreach approval gate, read as a lifecycle FLOW:
+// Awaiting approval → Approved → Sent → Replied. Signal-grounded drafts from the
 // writer agent; nothing leaves without a human Approve, and only the sender
-// (AgentMail) flips approved → sent. Reads emails:listByRun reactively.
+// (AgentMail) flips approved → sent. Each draft also offers "Design email", which
+// hands the draft off to the email designer via a window CustomEvent (another
+// surface listens). Reads emails:byRun reactively.
 // ============================================================================
+
+/** Fire-and-forget handoff to the email designer (built elsewhere). */
+function openEmailDesigner(email: EmailDoc): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("intercept:open-email-designer", {
+      detail: {
+        id: email._id,
+        emailId: email._id,
+        prospectId: email.prospectId,
+        to: email.to ?? null,
+        subject: email.subject,
+        body: email.body,
+        step: email.step,
+        kind: email.kind,
+        signalRef: email.signalRef ?? null,
+      },
+    }),
+  );
+}
 
 function EmailRow({ email }: { email: EmailDoc }) {
   const setStatus = useMutation(setEmailStatusRef);
@@ -68,6 +92,8 @@ function EmailRow({ email }: { email: EmailDoc }) {
     }
   }, [sendEmail, email._id]);
 
+  const design = useCallback(() => openEmailDesigner(email), [email]);
+
   return (
     <div className="rounded-lg border border-hairline bg-canvas p-3">
       <div className="flex items-start justify-between gap-3">
@@ -115,7 +141,7 @@ function EmailRow({ email }: { email: EmailDoc }) {
 
       {/* actions */}
       {!isSent && (
-        <div className="mt-2.5 flex items-center gap-2">
+        <div className="mt-2.5 flex flex-wrap items-center gap-2">
           {isDraft && (
             <>
               <button
@@ -147,6 +173,20 @@ function EmailRow({ email }: { email: EmailDoc }) {
               {busy === "send" ? "Sending…" : "Send via AgentMail"}
             </button>
           )}
+          {/* Design email — hands the draft to the email designer surface. */}
+          <button
+            onClick={design}
+            title="Open this draft in the email designer"
+            className="inline-flex items-center gap-1.5 rounded-pill border border-hairline bg-canvas px-3 py-1.5 text-[12px] font-fig-link text-ink/80 transition-colors hover:bg-surface-soft hover:text-ink"
+          >
+            <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5">
+              <path d="M12 19l7-7 3 3-7 7-3-3z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+              <path d="M2 2l7.586 7.586" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              <circle cx="11" cy="11" r="2" stroke="currentColor" strokeWidth="1.8" />
+            </svg>
+            Design email
+          </button>
           {note && <span className="text-[11px] text-ink/50">{note}</span>}
         </div>
       )}
@@ -159,11 +199,54 @@ function EmailRow({ email }: { email: EmailDoc }) {
   );
 }
 
+// One lifecycle stage of the outreach flow. Rendered only when it has emails, with
+// a consistent colored-dot header + count so the whole queue reads top-to-bottom.
+function Stage({
+  label,
+  statusKey,
+  emails,
+}: {
+  label: string;
+  statusKey: EmailStatus;
+  emails: EmailDoc[];
+}) {
+  if (emails.length === 0) return null;
+  const hex = EMAIL_STATUS_META[statusKey].hex;
+  // Sequence within a stage: initials first, then follow-ups by step.
+  const ordered = [...emails].sort((a, b) => a.step - b.step || a.createdAt - b.createdAt);
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2 px-0.5">
+        <span className="h-2 w-2 rounded-full" style={{ background: hex }} />
+        <span className="text-[12px] font-fig-headline text-ink">{label}</span>
+        <span className="rounded-full border border-hairline bg-canvas px-2 py-0.5 text-[10px] font-fig-bodysm tabular-nums text-ink/60">
+          {emails.length}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {ordered.map((e) => (
+          <EmailRow key={e._id} email={e} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function EmailQueue({ runId }: { runId: Id<"runs"> }) {
   const emails = useQuery(emailsByRunRef, { runId }) as EmailDoc[] | undefined;
 
-  const pending = (emails ?? []).filter((e) => e.status === "draft" || e.status === "approved");
-  const done = (emails ?? []).filter((e) => e.status !== "draft" && e.status !== "approved" && e.status !== "skipped");
+  const groups = useMemo(() => {
+    const by: Record<EmailStatus, EmailDoc[]> = {
+      draft: [],
+      approved: [],
+      sent: [],
+      replied: [],
+      bounced: [],
+      skipped: [],
+    };
+    for (const e of emails ?? []) by[e.status].push(e);
+    return by;
+  }, [emails]);
 
   if (emails === undefined) {
     return (
@@ -175,19 +258,34 @@ export default function EmailQueue({ runId }: { runId: Id<"runs"> }) {
     );
   }
 
-  const awaiting = (emails ?? []).filter((e) => e.status === "draft").length;
+  const awaiting = groups.draft.length;
+  const skipped = groups.skipped.length;
+
+  // Funnel readout, consistent with the pipeline's left→right story.
+  const funnel: { label: string; n: number }[] = [
+    { label: "awaiting", n: groups.draft.length },
+    { label: "approved", n: groups.approved.length },
+    { label: "sent", n: groups.sent.length },
+    { label: "replied", n: groups.replied.length },
+  ];
 
   return (
     <section className="space-y-3">
       <div className="flex items-end justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <h3 className="text-[15px] font-fig-headline text-ink">Outreach queue</h3>
-          <p className="text-[12.5px] text-ink/60">
-            Signal-grounded emails · human approval gate · AgentMail send
-          </p>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-ink/60">
+            {funnel.map((f, i) => (
+              <span key={f.label} className="inline-flex items-center gap-1.5">
+                {i > 0 && <span className="text-ink/25">›</span>}
+                <span className="tabular-nums text-ink/80">{f.n}</span>
+                <span>{f.label}</span>
+              </span>
+            ))}
+          </div>
         </div>
         {awaiting > 0 && (
-          <span className="caption rounded-full bg-block-cream px-3 py-1 text-ink">
+          <span className="caption shrink-0 rounded-full bg-block-cream px-3 py-1 text-ink">
             {awaiting} awaiting approval
           </span>
         )}
@@ -195,20 +293,19 @@ export default function EmailQueue({ runId }: { runId: Id<"runs"> }) {
 
       {(emails?.length ?? 0) === 0 ? (
         <div className="rounded-lg border border-dashed border-hairline bg-surface-soft p-10 text-center text-[13px] text-ink/60">
-          The writer drafts a signal-grounded email per qualified prospect — they queue here for your approval.
+          The writer drafts a signal-grounded email per qualified prospect — they queue here for your approval, then flow to sent and replied.
         </div>
       ) : (
-        <div className="space-y-2">
-          {pending.map((e) => (
-            <EmailRow key={e._id} email={e} />
-          ))}
-          {done.length > 0 && (
-            <>
-              <p className="caption px-1 pt-1 text-ink/40">Shipped</p>
-              {done.map((e) => (
-                <EmailRow key={e._id} email={e} />
-              ))}
-            </>
+        <div className="space-y-4">
+          <Stage label="Awaiting approval" statusKey="draft" emails={groups.draft} />
+          <Stage label="Approved · ready to send" statusKey="approved" emails={groups.approved} />
+          <Stage label="Sent" statusKey="sent" emails={groups.sent} />
+          <Stage label="Replied" statusKey="replied" emails={groups.replied} />
+          <Stage label="Bounced" statusKey="bounced" emails={groups.bounced} />
+          {skipped > 0 && (
+            <p className="px-0.5 text-[11px] text-ink/40">
+              {skipped} skipped {skipped === 1 ? "draft" : "drafts"} off-ramped
+            </p>
           )}
         </div>
       )}

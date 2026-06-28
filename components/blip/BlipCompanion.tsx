@@ -49,6 +49,12 @@ interface BlipCompanionProps {
   onFocusRun?: (runId: Id<"runs">) => void;
   /** OPTIONAL: open the Brain canvas/lens (badge + popover "brain" links). */
   onOpenBrain?: () => void;
+  /**
+   * Hide the corner companion entirely. The page sets this when the sidebar is
+   * EXPANDED (the sidebar's own Blip takes over) so exactly ONE Blip is ever
+   * visible. Hidden → render nothing AND skip every subscription/listener.
+   */
+  hidden?: boolean;
 }
 
 export default function BlipCompanion({
@@ -57,7 +63,30 @@ export default function BlipCompanion({
   size = 64,
   onFocusRun,
   onOpenBrain,
+  hidden = false,
 }: BlipCompanionProps) {
+  // Render nothing — and, crucially, mount none of the reactive hooks/listeners —
+  // when the sidebar Blip is on. (Early-return BEFORE any hook so the gaze
+  // pointer listener + the live queries don't run for a hidden companion.)
+  if (hidden) return null;
+  return (
+    <BlipCompanionInner
+      runId={runId}
+      conversationId={conversationId}
+      size={size}
+      onFocusRun={onFocusRun}
+      onOpenBrain={onOpenBrain}
+    />
+  );
+}
+
+function BlipCompanionInner({
+  runId = null,
+  conversationId = null,
+  size = 64,
+  onFocusRun,
+  onOpenBrain,
+}: Omit<BlipCompanionProps, "hidden">) {
   const spriteRef = useRef<HTMLButtonElement>(null);
   const gaze = useBlipGaze(spriteRef);
   const { state, speech, dismissSpeech, busy } = useBlipReactions({

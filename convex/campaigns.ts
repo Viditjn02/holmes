@@ -201,6 +201,16 @@ export const markTicked = internalMutation({
 export const tick = internalAction({
   args: {},
   handler: async (ctx): Promise<{ ticked: number }> => {
+    // 24/7 AUTONOMOUS master switch (DEFAULT OFF). When off, the whole
+    // keep-running loop no-ops: no 24/7 radar, no overnight sweep, no
+    // re-sourcing / re-monitoring / follow-up generation. A track does its task
+    // once and stops until the user explicitly turns autonomy on.
+    const autonomous: boolean = await ctx.runQuery(
+      internal.settings.isAutonomous,
+      {},
+    );
+    if (!autonomous) return { ticked: 0 };
+
     const campaigns: Doc<"campaigns">[] = await ctx.runQuery(
       internal.campaigns.activeCampaigns,
       {},

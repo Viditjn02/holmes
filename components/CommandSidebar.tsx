@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, type ReactElement } from "react";
+import { useMemo, useRef, type ReactElement } from "react";
 import { useMutation, useQuery } from "convex/react";
-import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Intent } from "@/lib/contract";
 import { cn } from "@/lib/utils";
 import { relativeTime } from "./format";
 import { deleteConversationRef, listConversationsRef } from "./chatApi";
 import type { ConversationDoc } from "./types";
-import { Blip, type BlipState } from "./blip/Blip";
+import { Blip, useBlipGaze } from "./blip/Blip";
+import { useBlipReactions } from "./blip/useBlipReactions";
+import { useBlipIntel } from "./blip/useBlipIntel";
 import ThemeToggle from "./ThemeToggle";
 
 // ============================================================================
@@ -20,10 +21,11 @@ import ThemeToggle from "./ThemeToggle";
 //
 // Layout, top → bottom:
 //   • BRAND      — INTERCEPT wordmark.
-//   • BLIP       — the mascot (where the old 3D orb sat) with a LIVE status ping
-//                  driven by the focused run (pulses while the swarm works).
-//   • NAV        — Home, the 7 canonical tracks (→ onFireTrack(intent)), and the
-//                  brain (→ onOpenBrain). ONE label each, canonical everywhere.
+//   • BLIP       — the reactive, centered mascot (SidebarBlip) — alive off the
+//                  live swarm (mood + gaze + the "learned N" brain glow).
+//   • NAV        — Home, the 7 canonical tracks (→ onSelectTrack(intent): show
+//                  the track's latest run or start one), and the brain
+//                  (→ onOpenBrain). ONE label each, canonical everywhere.
 //   • RECENT     — past conversations (select / delete) + New chat.
 //   • FOOTER     — a persistent ⌘K affordance + theme toggle.
 //
@@ -73,8 +75,12 @@ interface CommandSidebarProps {
   onSelectConversation: (id: Id<"conversations">) => void;
   /** Start a fresh chat. */
   onNewChat: () => void;
-  /** Fire a track for the default target — flips the page into the workspace. */
-  onFireTrack: (intent: Intent) => void;
+  /**
+   * Navigate to a track: SHOW its latest existing run if there is one, else
+   * start a fresh one. Either way it flips the page into the workspace. (The
+   * page resolves "show vs. start" so the sidebar stays presentational.)
+   */
+  onSelectTrack: (intent: Intent) => void;
   /** The track whose board is in focus, so its nav row reads active. */
   activeTrack?: Intent | null;
   /** Whether the canvas is showing the brain lens. */
@@ -90,25 +96,23 @@ interface CommandSidebarProps {
   onOpenPalette?: () => void;
 }
 
-// Map the focused run's status → a Blip mood + a status-ping descriptor.
-function runMood(status: string | undefined): {
-  blip: BlipState;
-  label: string;
-  dot: string;
-  pulse: boolean;
-} {
-  switch (status) {
-    case "running":
-      return { blip: "thinking", label: "Swarm working", dot: "bg-accent-magenta", pulse: true };
-    case "complete":
-      return { blip: "happy", label: "Run complete", dot: "bg-success", pulse: false };
-    case "partial":
-      return { blip: "idle", label: "Partial result", dot: "bg-accent-magenta", pulse: false };
-    case "failed":
-      return { blip: "concerned", label: "Run stalled", dot: "bg-ink/40", pulse: false };
-    default:
-      return { blip: "idle", label: "Idle · listening", dot: "bg-ink/25", pulse: false };
+// ── RECENT declutter — dedupe near-duplicate titles, keep it to a handful ───
+const RECENT_LIMIT = 5;
+
+function dedupeRecent(
+  list: ConversationDoc[] | undefined,
+): ConversationDoc[] {
+  if (!list) return [];
+  const seen = new Set<string>();
+  const out: ConversationDoc[] = [];
+  for (const c of list) {
+    const key = (c.title || "Untitled").trim().toLowerCase();
+    if (seen.has(key)) continue; // drop a near-duplicate title
+    seen.add(key);
+    out.push(c);
+    if (out.length >= RECENT_LIMIT) break;
   }
+  return out;
 }
 
 export default function CommandSidebar({
@@ -117,7 +121,7 @@ export default function CommandSidebar({
   activeId,
   onSelectConversation,
   onNewChat,
-  onFireTrack,
+  onSelectTrack,
   activeTrack = null,
   brainActive = false,
   onOpenBrain,
@@ -130,11 +134,12 @@ export default function CommandSidebar({
     | ConversationDoc[]
     | undefined;
   const deleteConversation = useMutation(deleteConversationRef);
-  const run = useQuery(
-    api.runs.getRun,
-    focusedRunId ? { runId: focusedRunId } : "skip",
-  );
-  const mood = runMood(run?.status);
+
+  // PERF: the conversations subscription can return up to 50 rows; render only a
+  // deduped handful (RECENT_LIMIT) and memoize the derivation so unrelated
+  // re-renders (focused-run pings, Blip reactions, hover state) don't rebuild the
+  // whole list — the sidebar felt sluggish when it mapped all 50 every render.
+  const recent = useMemo(() => dedupeRecent(conversations), [conversations]);
 
   const onDelete = async (e: React.MouseEvent, id: Id<"conversations">) => {
     e.stopPropagation();
@@ -145,7 +150,10 @@ export default function CommandSidebar({
     }
   };
 
-  // ── collapsed: a thin keyboard-free rail ──────────────────────────────────
+  // ── collapsed: a thin icons-only rail. NO sidebar Blip here — when collapsed
+  // the bottom-right BlipCompanion takes over (coordinated from page.tsx), so
+  // exactly one Blip is ever visible. Icons: expand · home · tracks · brain ·
+  // new · ⌘K · theme. ──────────────────────────────────────────────────────────
   if (collapsed) {
     return (
       <div className="glass-1 flex h-full w-14 flex-col items-center gap-2 py-3">
@@ -154,10 +162,9 @@ export default function CommandSidebar({
           aria-label="Expand sidebar"
           className="flex h-9 w-9 items-center justify-center rounded-xl text-ink/60 transition-colors hover:bg-canvas hover:text-ink"
         >
-          <span className="relative">
-            <Blip state={mood.blip} size={26} />
-            <StatusBadge dot={mood.dot} pulse={mood.pulse} className="-right-0.5 -top-0.5" />
-          </span>
+          <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
+            <path d="M9 6l6 6-6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
         </button>
         <button
           onClick={onHome}
@@ -177,7 +184,7 @@ export default function CommandSidebar({
           return (
             <button
               key={t.key}
-              onClick={() => onFireTrack(t.key)}
+              onClick={() => onSelectTrack(t.key)}
               aria-label={t.label}
               aria-current={active ? "page" : undefined}
               className={cn(
@@ -213,6 +220,16 @@ export default function CommandSidebar({
           >
             <PlusIcon className="h-4 w-4" />
           </button>
+          <button
+            onClick={() => onOpenPalette?.()}
+            aria-label="Command palette (⌘K)"
+            className="flex h-9 w-9 items-center justify-center rounded-xl text-ink/55 transition-colors hover:bg-canvas hover:text-ink"
+          >
+            <svg viewBox="0 0 24 24" fill="none" className="h-[18px] w-[18px]">
+              <circle cx="11" cy="11" r="6.5" stroke="currentColor" strokeWidth="1.7" />
+              <path d="m20 20-3.6-3.6" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            </svg>
+          </button>
           <ThemeToggle />
         </div>
       </div>
@@ -244,20 +261,10 @@ export default function CommandSidebar({
         </button>
       </div>
 
-      {/* BLIP + live status ping (where the old orb sat) */}
-      <div className="mx-3 mb-1 flex items-center gap-2.5 rounded-xl border border-hairline bg-canvas/70 px-3 py-2">
-        <span className="relative shrink-0">
-          <Blip state={mood.blip} size={38} glow={mood.blip === "thinking" ? 0.5 : 0} />
-          <StatusBadge dot={mood.dot} pulse={mood.pulse} className="-right-0.5 top-0.5" />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[12.5px] font-fig-headline text-ink">Blip</span>
-          <span className="caption flex items-center gap-1.5 text-ink">
-            <span className={cn("h-1.5 w-1.5 rounded-full", mood.dot, mood.pulse && "animate-blink")} />
-            <span className="truncate">{mood.label}</span>
-          </span>
-        </span>
-      </div>
+      {/* BLIP — centered, bigger, and ALIVE (the same reactive sprite/behavior as
+          the corner companion: live swarm mood + gaze + the "learned N" glow).
+          Only mounted when EXPANDED, so its hooks/queries don't run collapsed. */}
+      <SidebarBlip focusedRunId={focusedRunId} conversationId={activeId} />
 
       {/* NAV — Home, the 7 tracks, the brain */}
       <nav aria-label="Tracks" className="px-2 pt-1">
@@ -282,7 +289,7 @@ export default function CommandSidebar({
               active={surface === "workspace" && activeTrack === t.key}
               accent={t.accent}
               icon={<Icon className="h-4 w-4" />}
-              onClick={() => onFireTrack(t.key)}
+              onClick={() => onSelectTrack(t.key)}
             />
           );
         })}
@@ -311,28 +318,28 @@ export default function CommandSidebar({
         {conversations === undefined ? (
           <div className="space-y-1.5 px-1 py-1">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-9 animate-pulse rounded-md bg-surface-soft" />
+              <div key={i} className="h-8 animate-pulse rounded-md bg-surface-soft" />
             ))}
           </div>
-        ) : conversations.length === 0 ? (
+        ) : recent.length === 0 ? (
           <p className="px-2 py-5 text-center text-[11.5px] leading-relaxed text-ink/60">
             No conversations yet. Fire a track or start a chat.
           </p>
         ) : (
-          <ul className="space-y-0.5">
-            {conversations.map((c) => {
+          <ul className="space-y-px">
+            {recent.map((c) => {
               const active = c._id === activeId && surface === "workspace";
               return (
                 <li key={c._id}>
                   <button
                     onClick={() => onSelectConversation(c._id)}
                     className={cn(
-                      "group flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left transition-colors",
+                      "group flex w-full items-center gap-2 rounded-md px-2.5 py-1 text-left transition-colors",
                       active ? "bg-canvas" : "hover:bg-canvas",
                     )}
                   >
                     <span className="min-w-0 flex-1">
-                      <span className={cn("block truncate text-[12.5px] text-ink", active && "font-fig-headline")}>
+                      <span className={cn("block truncate text-[12.5px] leading-tight text-ink", active && "font-fig-headline")}>
                         {c.title || "Untitled"}
                       </span>
                       <span className="caption text-ink/55">{relativeTime(c.lastMessageAt)}</span>
@@ -421,13 +428,66 @@ function NavRow({
   );
 }
 
-// ── a small corner status dot with an optional soft ping ring ───────────────
-function StatusBadge({ dot, pulse, className }: { dot: string; pulse: boolean; className?: string }) {
+// ── SidebarBlip — the centered, bigger, ALIVE mascot. It reuses the EXACT same
+// reactive layers as the corner BlipCompanion (useBlipReactions for live swarm
+// mood + ambient one-liners, useBlipGaze for cursor tracking, useBlipIntel for
+// the compounding-brain glow + the "learned N" badge). Decorative; no input. ───
+const SIDEBAR_STATUS: Record<
+  string,
+  { label: string; dot: string; pulse: boolean }
+> = {
+  thinking: { label: "Swarm working", dot: "bg-accent-magenta", pulse: true },
+  talking: { label: "Thinking out loud", dot: "bg-accent-magenta", pulse: true },
+  celebrate: { label: "Nice — a win", dot: "bg-success", pulse: false },
+  happy: { label: "Nice — a win", dot: "bg-success", pulse: false },
+  concerned: { label: "Hmm, that stalled", dot: "bg-ink/40", pulse: false },
+  idle: { label: "Idle · listening", dot: "bg-ink/25", pulse: false },
+};
+
+function SidebarBlip({
+  focusedRunId,
+  conversationId,
+}: {
+  focusedRunId: Id<"runs"> | null;
+  conversationId: Id<"conversations"> | null;
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const gaze = useBlipGaze(wrapRef);
+  const { state, speech, dismissSpeech, busy } = useBlipReactions({
+    runId: focusedRunId,
+    conversationId,
+  });
+  const { brain } = useBlipIntel({ runId: focusedRunId, conversationId });
+
+  const meta =
+    SIDEBAR_STATUS[state] ??
+    (busy ? SIDEBAR_STATUS.thinking : SIDEBAR_STATUS.idle);
+
   return (
-    <span aria-hidden className={cn("absolute flex h-2.5 w-2.5", className)}>
-      {pulse && <span className={cn("absolute inset-0 rounded-full opacity-60 animate-pulse-ring", dot)} />}
-      <span className={cn("relative h-2.5 w-2.5 rounded-full ring-2 ring-canvas", dot)} />
-    </span>
+    <div className="mx-3 mb-1 mt-0.5 flex flex-col items-center gap-2 rounded-2xl border border-hairline bg-canvas/70 px-3 py-4">
+      <div ref={wrapRef} className="relative">
+        <Blip state={state} size={72} gaze={gaze} glow={brain.glow} />
+        {brain.learnedDelta > 0 && (
+          <span className="absolute -right-1 -top-1 rounded-full border border-hairline bg-accent-magenta px-1.5 py-0.5 text-[9px] font-semibold leading-none text-white shadow-sm">
+            +{brain.learnedDelta}
+          </span>
+        )}
+      </div>
+      {speech ? (
+        <button
+          type="button"
+          onClick={dismissSpeech}
+          className="max-w-[190px] rounded-xl border border-hairline bg-canvas px-2.5 py-1 text-center text-[11.5px] leading-snug text-ink shadow-sm transition-opacity hover:opacity-80"
+        >
+          {speech}
+        </button>
+      ) : (
+        <span className="caption flex items-center gap-1.5 text-ink">
+          <span className={cn("h-1.5 w-1.5 rounded-full", meta.dot, meta.pulse && "animate-blink")} />
+          <span className="truncate">{meta.label}</span>
+        </span>
+      )}
+    </div>
   );
 }
 

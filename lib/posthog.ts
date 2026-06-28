@@ -72,11 +72,15 @@ export function getDistinctId(override?: string): string {
  * throws: a missing key, network error, or bad host is swallowed silently.
  */
 export async function capture(event: string, props: CaptureProps = {}): Promise<void> {
-  const key = getKey();
-  if (!key || !event) return; // graceful no-op — feature disabled
-
-  const { distinctId, ...rest } = props;
+  // EVERYTHING runs inside one try/catch (including the cheap reads and the
+  // destructure) so capture() can NEVER throw synchronously NOR reject — calling
+  // it fire-and-forget (no await, no .catch) can never surface an unhandled
+  // rejection. Analytics must never block the swarm, the brief, or any agent.
   try {
+    const key = getKey();
+    if (!key || !event) return; // graceful no-op — feature disabled
+
+    const { distinctId, ...rest } = props;
     const body = JSON.stringify({
       api_key: key,
       event,

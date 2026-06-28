@@ -149,3 +149,87 @@ export function chatStreamUrl(): URL {
     return new URL("https://placeholder.convex.site/chat-stream");
   }
 }
+
+// ---------------------------------------------------------------------------
+// EMAIL DESIGN (convex/emailDesign.ts — Email-design builder). The EmailDesigner
+// modal (mounted once globally; self-opens on `intercept:open-email-designer`)
+// drives these. Saved branded templates live in a table (`emailTemplates`) the
+// email-design builder is adding in parallel, so it is NOT in the generated
+// dataModel yet — hence the doc `_id` is typed `string` here (same approach as
+// KnowledgePageDoc in ./types). These bind at runtime once the module deploys.
+// ---------------------------------------------------------------------------
+
+/** Optional brand styling carried on a saved template (mirrors lib/brew BrandInfo). */
+export interface EmailTemplateBrand {
+  company?: string;
+  logoUrl?: string;
+  accentHex?: string;
+  fromName?: string;
+  websiteUrl?: string;
+  footerNote?: string;
+}
+
+/** A saved, reusable branded email template. */
+export interface EmailTemplateDoc {
+  _id: string;
+  _creationTime?: number;
+  name: string;
+  subject?: string;
+  html: string;
+  body?: string;
+  brand?: EmailTemplateBrand;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+/** All saved branded templates, newest first. */
+export const listEmailTemplatesRef = makeFunctionReference<
+  "query",
+  Record<string, never>,
+  EmailTemplateDoc[]
+>("emailDesign:listTemplates");
+
+/** Persist a branded template for reuse; returns its id (string — table not yet codegen'd). */
+export const saveEmailTemplateRef = makeFunctionReference<
+  "mutation",
+  {
+    name: string;
+    subject?: string;
+    html: string;
+    body?: string;
+    brand?: EmailTemplateBrand;
+  },
+  string
+>("emailDesign:saveTemplate");
+
+/**
+ * Send a Brew-designed (branded HTML) email. The server re-renders with the real
+ * BREW_API_KEY and ships it via AgentMail, falling back to the supplied `html`
+ * (or a plain send) if Brew is unconfigured. Never throws on the server side.
+ */
+export const sendDesignedEmailRef = makeFunctionReference<
+  "action",
+  {
+    to?: string;
+    subject: string;
+    body: string;
+    html?: string;
+    templateId?: string;
+    emailId?: Id<"emails">;
+    runId?: Id<"runs">;
+  },
+  { sent: boolean; reason?: string; id?: string }
+>("emailDesign:sendDesigned");
+
+/** Send a plain-text cold email (no design) via AgentMail. */
+export const sendPlainEmailRef = makeFunctionReference<
+  "action",
+  {
+    to?: string;
+    subject: string;
+    body: string;
+    emailId?: Id<"emails">;
+    runId?: Id<"runs">;
+  },
+  { sent: boolean; reason?: string; id?: string }
+>("emailDesign:sendPlain");

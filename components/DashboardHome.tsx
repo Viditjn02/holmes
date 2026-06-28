@@ -3,25 +3,21 @@
 // ============================================================================
 // DashboardHome — the GTM Command Center landing surface (light Figma editorial).
 //
-// Renders the per-track NODE STAT CARDS (one per capability) with REAL live
-// counts + status chip + a tiny inline sparkline, plus a right-hand live-activity
-// feed merged from the most-recent runs. Clicking a node fires `onOpenTrack`
-// (or drills into its latest board via `onOpenRun` when one exists).
+// Renders the per-track COMPACT NODE STAT CARDS (one per capability) with REAL
+// live counts + a real status chip + a tiny inline sparkline, plus a right-hand
+// live-activity feed merged from the most-recent runs. Clicking a node fires
+// `onOpenTrack` (or drills into its latest board via `onOpenRun` when one exists).
+// `children` (the fire-a-play menu) renders in the SAME scroll under the grid.
 //
-// STANDALONE-COMPILABLE: it reads the queries that ALREADY exist in the generated
-// `api` (runs.listRuns, knowledge.brainStats) for the Tier-A numbers, and reads
-// the richer `dashboard:overview` through a makeFunctionReference (the chatApi.ts
-// pattern) so it type-checks BEFORE convex/dashboard.ts deploys — until then that
-// query returns undefined and the cards fall back to the Tier-A run roll-up.
-//
-// The DASHBOARD_TRACKS registry + TrackStat/TrackOverview shapes live here for
-// now (disjoint, no shared-file edits); the integrator hoists them to
-// lib/contract.ts in the ship step and swaps the local defs for an import.
+// DATA: derived PURELY from the two queries that exist in the generated `api`
+// (runs.listRuns + knowledge.brainStats). There is intentionally NO Tier-B
+// `dashboard:overview` query — Convex `useQuery` THROWS synchronously on a missing
+// function (it does NOT return undefined), which crashed the landing; the cards
+// are a run roll-up grouped by intent (see deriveStats / deriveTrackStatus).
 // ============================================================================
 
-import { useMemo, type ReactElement } from "react";
+import { useMemo, type ReactElement, type ReactNode } from "react";
 import { useQuery } from "convex/react";
-import { makeFunctionReference } from "convex/server";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
 import type { Capability } from "@/lib/contract";
@@ -112,7 +108,7 @@ const TRACKS: readonly TrackMeta[] = [
 ] as const;
 
 // ---------------------------------------------------------------------------
-// Stat shapes — also the prop type DashboardHome consumes from `overview`.
+// Stat shapes — the per-card model derived from the run roll-up.
 // ---------------------------------------------------------------------------
 type TrackStatStatus = "idle" | "working" | "radar" | "done";
 
@@ -125,20 +121,6 @@ interface TrackStat {
   latestRunId?: Id<"runs">;
   spark: number[]; // bucketed series for the sparkline
 }
-
-interface TrackOverview {
-  tracks: TrackStat[];
-  brain: { facts: number; pages: number; status: "idle" | "working" | "done" };
-  updatedAt: number;
-}
-
-// The richer per-entity counts — bound at runtime once convex/dashboard.ts
-// deploys; returns undefined until then (cards fall back to Tier A).
-const overviewRef = makeFunctionReference<
-  "query",
-  Record<string, never>,
-  TrackOverview
->("dashboard:overview");
 
 const SPARK_BUCKETS = 12;
 const SPARK_WINDOW_MS = 24 * 60 * 60 * 1000; // last 24h
@@ -154,67 +136,59 @@ export interface DashboardHomeProps {
   onOpenBrain?: () => void;
   /** The default target business URL (display only here). */
   targetUrl?: string;
+  /** Rendered in the SAME scroll column under the node grid (the fire-a-play menu)
+   *  so the cards + plays read as one page instead of two cramped scroll boxes. */
+  children?: ReactNode;
 }
 
 export default function DashboardHome({
   onOpenTrack,
   onOpenRun,
   onOpenBrain,
-  targetUrl,
+  children,
 }: DashboardHomeProps) {
-  // Tier A — already in the generated api.
+  // Both reads are deployed in the generated api. (There is NO convex/dashboard.ts
+  // "overview" query — subscribing to a missing function THROWS synchronously and
+  // crashed the landing, so the cards are derived purely from these two.)
   const runs = useQuery(api.runs.listRuns, {}) as Doc<"runs">[] | undefined;
   const brainStats = useQuery(api.knowledge.brainStats, {}) as
     | { pages: number; facts: number; runs: number; lastUpdatedAt: number }
     | undefined;
-  // Tier B — richer entity counts (undefined until convex/dashboard.ts deploys).
-  const overview = useQuery(overviewRef, {}) as TrackOverview | undefined;
 
-  // Derive the per-track stat cards (Tier B if present, else Tier A roll-up).
+  // Derive the per-track stat cards from the run roll-up (grouped by intent).
   const stats = useMemo<TrackStat[]>(
-    () => deriveStats(TRACKS, runs ?? [], overview),
-    [runs, overview],
+    () => deriveStats(TRACKS, runs ?? []),
+    [runs],
   );
   const statByKey = useMemo(
     () => new Map(stats.map((s) => [s.key, s])),
     [stats],
   );
 
-  const brain = overview?.brain ?? deriveBrain(brainStats);
+  const brain = deriveBrain(brainStats);
 
   const handleOpen = (s: TrackStat | undefined, key: Capability) => {
     if (s?.latestRunId && onOpenRun) onOpenRun(s.latestRunId, key);
     else onOpenTrack(key);
   };
 
-  const loading = runs === undefined && overview === undefined;
+  const loading = runs === undefined;
 
   return (
     <div className="flex h-full w-full overflow-hidden bg-canvas text-ink">
-      {/* ── main column: header + node stat cards ───────────────────────── */}
-      <div className="col-scroll flex-1 overflow-y-auto px-8 py-7">
-        <header className="mb-7 flex items-end justify-between gap-4">
-          <div>
-            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink/45">
-              GTM Command Center
-            </p>
-            <h1 className="mt-1 text-[28px] font-fig-headline leading-tight tracking-tight">
-              Pick a play.
-            </h1>
-          </div>
-          {targetUrl ? (
-            <span className="inline-flex items-center gap-2 rounded-full border border-hairline bg-surface-soft px-3.5 py-1.5">
-              <span className="font-mono text-[10px] uppercase tracking-wide text-ink/40">
-                Target
-              </span>
-              <span className="text-[13px] font-fig-link text-ink">
-                {targetUrl}
-              </span>
-            </span>
-          ) : null}
+      {/* ── main column: ONE scroll for the COMPACT node grid + the plays
+          (children). Cards are sized to fit — no cramped inner scroll box. ──── */}
+      <div className="col-scroll min-h-0 flex-1 overflow-y-auto px-7 pb-28 pt-6">
+        <header className="mb-4">
+          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink/45">
+            GTM Command Center
+          </p>
+          <h1 className="mt-1 text-[23px] font-fig-headline leading-tight tracking-tight">
+            Pick a play.
+          </h1>
         </header>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
           {TRACKS.map((t) => (
             <NodeCard
               key={t.key}
@@ -226,10 +200,14 @@ export default function DashboardHome({
           ))}
           <BrainCard brain={brain} loading={loading} onClick={onOpenBrain} />
         </div>
+
+        {/* the fire-a-play menu shares this scroll, passed in by the dashboard
+            surface, so cards + plays read as one page (never a split). */}
+        {children ? <div className="mt-8">{children}</div> : null}
       </div>
 
-      {/* ── right rail: merged live-activity feed ───────────────────────── */}
-      <aside className="hidden w-[340px] shrink-0 border-l border-hairline bg-surface-soft/40 lg:block">
+      {/* ── right rail: merged live-activity feed (its own scroll) ───────── */}
+      <aside className="hidden w-[300px] shrink-0 border-l border-hairline bg-surface-soft/40 lg:block">
         <ActivityFeed runs={runs} />
       </aside>
     </div>
@@ -260,47 +238,47 @@ function NodeCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "group relative flex flex-col gap-3 rounded-2xl border border-hairline bg-canvas p-5 text-left",
-        "transition-all duration-150 hover:-translate-y-0.5 hover:border-ink/25 hover:shadow-[0_8px_28px_-12px_rgb(var(--ink)/0.22)]",
+        "group relative flex flex-col gap-2 rounded-xl border border-hairline bg-canvas p-3.5 text-left",
+        "transition-all duration-150 hover:-translate-y-0.5 hover:border-ink/25 hover:shadow-[0_8px_24px_-14px_rgb(var(--ink)/0.22)]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20",
       )}
     >
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <span
           className={cn(
-            "flex h-10 w-10 items-center justify-center rounded-xl text-ink/80",
+            "flex h-8 w-8 items-center justify-center rounded-lg text-ink/80",
             track.accent,
           )}
         >
-          <Icon className="h-5 w-5" />
+          <Icon className="h-4 w-4" />
         </span>
         <StatusPill status={stat?.status ?? "idle"} />
       </div>
 
       <div>
-        <h3 className="text-[15px] font-fig-card leading-tight tracking-tight">
+        <h3 className="text-[13.5px] font-fig-card leading-tight tracking-tight">
           {track.label}
         </h3>
-        <p className="mt-0.5 line-clamp-2 text-[12.5px] leading-snug text-ink/55">
+        <p className="mt-0.5 line-clamp-1 text-[11.5px] leading-snug text-ink/55">
           {track.tagline}
         </p>
       </div>
 
-      <div className="mt-auto flex items-end justify-between gap-3">
+      <div className="mt-1 flex items-end justify-between gap-3">
         <div>
           {loading ? (
-            <div className="h-8 w-16 animate-pulse rounded bg-ink/5" />
+            <div className="h-6 w-14 animate-pulse rounded bg-ink/5" />
           ) : isEmpty ? (
-            <p className="max-w-[150px] text-[11.5px] font-medium leading-tight text-ink/45">
+            <p className="max-w-[160px] text-[11px] font-medium leading-tight text-ink/45">
               {track.zero}
             </p>
           ) : (
             <>
               <NumberTicker
                 value={count}
-                className="text-[26px] font-fig-card leading-none text-ink"
+                className="text-[21px] font-fig-card leading-none text-ink"
               />
-              <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-ink/40">
+              <p className="mt-0.5 font-mono text-[9.5px] uppercase tracking-wide text-ink/40">
                 {track.statNoun}
                 {typeof stat?.sub === "number" && stat.sub > 0
                   ? ` · ${stat.sub} drafted`
@@ -332,39 +310,39 @@ function BrainCard({
       type="button"
       onClick={onClick}
       className={cn(
-        "group relative flex flex-col gap-3 rounded-2xl border border-hairline bg-block-navy/10 p-5 text-left",
-        "transition-all duration-150 hover:-translate-y-0.5 hover:border-ink/25 hover:shadow-[0_8px_28px_-12px_rgb(var(--ink)/0.22)]",
+        "group relative flex flex-col gap-2 rounded-xl border border-hairline bg-block-navy/10 p-3.5 text-left",
+        "transition-all duration-150 hover:-translate-y-0.5 hover:border-ink/25 hover:shadow-[0_8px_24px_-14px_rgb(var(--ink)/0.22)]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/20",
       )}
     >
-      <div className="flex items-start justify-between gap-2">
-        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-block-navy/20 text-ink/80">
-          <IconBrain className="h-5 w-5" />
+      <div className="flex items-center justify-between gap-2">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-block-navy/20 text-ink/80">
+          <IconBrain className="h-4 w-4" />
         </span>
-        <StatusPill status={brain.status === "working" ? "working" : "done"} />
+        <StatusPill status={brain.status} />
       </div>
       <div>
-        <h3 className="text-[15px] font-fig-card leading-tight tracking-tight">
+        <h3 className="text-[13.5px] font-fig-card leading-tight tracking-tight">
           The brain
         </h3>
-        <p className="mt-0.5 text-[12.5px] leading-snug text-ink/55">
+        <p className="mt-0.5 line-clamp-1 text-[11.5px] leading-snug text-ink/55">
           What every run taught us — it compounds.
         </p>
       </div>
-      <div className="mt-auto">
+      <div className="mt-1">
         {loading ? (
-          <div className="h-8 w-16 animate-pulse rounded bg-ink/5" />
+          <div className="h-6 w-14 animate-pulse rounded bg-ink/5" />
         ) : isEmpty ? (
-          <p className="text-[11.5px] font-medium text-ink/45">
+          <p className="text-[11px] font-medium text-ink/45">
             The brain is empty — it grows per run
           </p>
         ) : (
           <>
             <NumberTicker
               value={brain.facts}
-              className="text-[26px] font-fig-card leading-none text-ink"
+              className="text-[21px] font-fig-card leading-none text-ink"
             />
-            <p className="mt-1 font-mono text-[10px] uppercase tracking-wide text-ink/40">
+            <p className="mt-0.5 font-mono text-[9.5px] uppercase tracking-wide text-ink/40">
               facts · {brain.pages.toLocaleString()} pages
             </p>
           </>
@@ -526,47 +504,59 @@ function ActivityFeed({ runs }: { runs: Doc<"runs">[] | undefined }) {
 function deriveStats(
   tracks: readonly TrackMeta[],
   runs: readonly Doc<"runs">[],
-  overview: TrackOverview | undefined,
 ): TrackStat[] {
-  if (overview) {
-    const byKey = new Map(overview.tracks.map((t) => [t.key, t]));
-    return tracks.map(
-      (t) =>
-        byKey.get(t.key) ?? {
-          key: t.key,
-          count: 0,
-          runCount: 0,
-          status: "idle" as const,
-          spark: emptySpark(),
-        },
-    );
-  }
-  // Tier A — run roll-up grouped by intent.
+  // Run roll-up grouped by intent.
   const now = Date.now();
   return tracks.map((t) => {
     const mine = runs.filter((r) => r.intent === t.key);
     const latest = mine[0]; // listRuns is newest-first
-    const status: TrackStatStatus = !latest
-      ? "idle"
-      : latest.status === "running"
-        ? "working"
-        : "done";
     return {
       key: t.key,
       count: mine.length,
       runCount: mine.length,
-      status,
+      status: deriveTrackStatus(latest, now),
       latestRunId: latest?._id,
       spark: bucketByTime(mine.map((r) => r.startedAt), now),
     };
   });
 }
 
+// Grace past the hard fan-in deadline before we treat a still-"running" run as
+// stale. A run whose orchestrator never flipped its terminal status (common in
+// dev) must NOT read "Working" forever — that was the "everything's working" bug.
+const STALE_GRACE_MS = 8_000;
+
+/**
+ * Map a track's LATEST run → its real status. The cards must reflect reality:
+ *   • IDLE    — no run for this intent at all.
+ *   • WORKING — the latest run is genuinely running (a manual/chat run, before
+ *               its fan-in deadline). A stale "running" past the deadline is NOT
+ *               working — it's settled, so it reads DONE.
+ *   • RADAR   — the track is AUTONOMOUS (a 24/7 cron run): the watch is on,
+ *               whether the latest tick is mid-flight or between ticks.
+ *   • DONE    — the latest run has settled (completed / partial / stalled).
+ */
+function deriveTrackStatus(
+  latest: Doc<"runs"> | undefined,
+  now: number,
+): TrackStatStatus {
+  if (!latest) return "idle";
+  const autonomous = latest.trigger === "cron";
+  const liveRunning =
+    latest.status === "running" && now <= latest.deadlineAt + STALE_GRACE_MS;
+  if (liveRunning) return autonomous ? "radar" : "working";
+  // Settled (or a stale "running" we no longer trust).
+  if (autonomous && latest.status !== "failed") return "radar";
+  return "done";
+}
+
 function deriveBrain(
   stats: { facts: number; pages: number; lastUpdatedAt: number } | undefined,
 ): { facts: number; pages: number; status: "idle" | "working" | "done" } {
   if (!stats) return { facts: 0, pages: 0, status: "idle" };
-  const fresh = Date.now() - stats.lastUpdatedAt < 10 * 60 * 1000;
+  // Honest: "working" only while the brain was JUST written (a run is actively
+  // teaching it); otherwise it's idle (empty) or done (it knows things).
+  const fresh = Date.now() - stats.lastUpdatedAt < 90 * 1000;
   const status = stats.facts === 0 ? "idle" : fresh ? "working" : "done";
   return { facts: stats.facts, pages: stats.pages, status };
 }

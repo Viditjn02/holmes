@@ -145,7 +145,28 @@ export default defineSchema({
   })
     .index("by_status", ["status"])
     .index("by_conversation", ["conversationId"])
-    .index("by_campaign", ["campaignId"]),
+    .index("by_campaign", ["campaignId"])
+    // DEDUPE: find a recent COMPLETED run for the same (intent, target) so a
+    // repeated chat/manual ask reuses it instead of re-running (convex/runs.ts
+    // findReusableRun). Ordered by [intent, status] then _creationTime desc.
+    .index("by_intent_status", ["intent", "status"]),
+
+  // ==========================================================================
+  // SHARED-PHASE CACHE — different tracks for the SAME target redo identical
+  // upstream phases (company enrich/firmographics, etc.). We cache each phase
+  // result keyed by `${step}:${target}` with a short TTL so e.g. an `outbound`
+  // and a `social` run for the same company don't both re-scrape + re-infer the
+  // brief. Purely additive / best-effort: a miss just recomputes. (Competitor ad
+  // discovery is already cached via `adScanCache`.) Written/read by convex/runs.ts
+  // (getStepCache / putStepCache); consumed by the enrich agent.
+  // ==========================================================================
+  stepCache: defineTable({
+    key: v.string(), // `${step}:${target}` — the dedup key (e.g. "enrich:resend.com")
+    step: v.string(), // the shared phase ("enrich")
+    target: v.string(), // normalized target (host/name)
+    value: v.any(), // the cached phase result (JSON-serializable)
+    fetchedAt: v.number(), // for TTL expiry
+  }).index("by_key", ["key"]),
 
   // Drives the live swarm board. One row per agent per run. Reused VERBATIM — the
   // orchestrator (convex/run.ts) owns these transitions. `agent` is a free string
@@ -673,6 +694,40 @@ export default defineSchema({
     key: v.literal("workspace"), // the singleton discriminator (always "workspace")
     targetUrl: v.string(), // normalized host, e.g. "nolongerjobless.com"
     targetLabel: v.optional(v.string()), // optional human label for the chip
+    // 24/7 AUTONOMOUS master switch (DEFAULT OFF). When false, every
+    // keep-running behavior is gated off: the cron tick no-ops (no 24/7 radar,
+    // no overnight sweep, no re-monitoring / keep-generating-outreach) so a
+    // track does its task ONCE and stops. When true, the recurring radar runs.
+    // Optional so existing rows (written before this field) read as OFF.
+    autonomous: v.optional(v.boolean()),
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
+
+  // ==========================================================================
+  // EMAIL TEMPLATES — designer-built, reusable branded email bodies (the
+  // email-design UI's CRUD store). A template carries a rich `html` body, a
+  // plain-text `body` fallback, and optional `brand` styling. The send actions
+  // in convex/emailDesign.ts route a chosen template through the SAME AgentMail
+  // path the outreach sender uses (lib/agentmail.sendMessage). Field shapes
+  // mirror EmailTemplateDoc / EmailTemplateBrand in components/chatApi.ts (the
+  // UI's committed makeFunctionReference contract) so the calls bind verbatim.
+  // ==========================================================================
+  emailTemplates: defineTable({
+    name: v.string(), // human label for the template list
+    subject: v.optional(v.string()), // default subject line
+    html: v.string(), // designed rich HTML body (always present on save)
+    body: v.optional(v.string()), // plain-text body / fallback
+    brand: v.optional(
+      v.object({
+        company: v.optional(v.string()),
+        logoUrl: v.optional(v.string()),
+        accentHex: v.optional(v.string()),
+        fromName: v.optional(v.string()),
+        websiteUrl: v.optional(v.string()),
+        footerNote: v.optional(v.string()),
+      }),
+    ),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_updated", ["updatedAt"]),
 });

@@ -103,6 +103,28 @@ export const run = internalAction({
     // homepage instead of "https://Superhuman".
     const scrapeTarget = runDoc.routedDomain?.trim() || input;
 
+    // SHARED-PHASE CACHE: another track for this SAME target may have already
+    // enriched it (e.g. an `outbound` run minutes before this `social` one).
+    // Reuse that brief — skip the scrape + LLM — and just persist it for THIS
+    // run. Best-effort: on miss/unavailable we fall through and compute fresh.
+    try {
+      const cached = (await ctx.runQuery(internal.runs.getStepCache, {
+        step: "enrich",
+        target: scrapeTarget,
+      })) as EnrichResult | null;
+      if (cached && cached.icp?.trim() && cached.positioning?.trim()) {
+        await ctx.runMutation(internal.brief.assembleBrief, {
+          runId,
+          icp: cached.icp,
+          positioning: cached.positioning,
+          company: cached.company,
+        });
+        return cached;
+      }
+    } catch {
+      // cache miss / unavailable — recompute below.
+    }
+
     // 1) Scrape the company's web presence. Failure is non-fatal — we degrade to
     //    an input-only context so the brief is always produced.
     let scrape: ScrapeResult = {};
@@ -197,6 +219,18 @@ export const run = internalAction({
       positioning: result.positioning,
       company: result.company,
     });
+
+    // Cache this enrich result so sibling tracks for the same target reuse it
+    // (TTL-bounded in convex/runs.ts). Best-effort — never block the run.
+    try {
+      await ctx.runMutation(internal.runs.putStepCache, {
+        step: "enrich",
+        target: scrapeTarget,
+        value: result,
+      });
+    } catch {
+      // best-effort cache write.
+    }
 
     return result;
   },

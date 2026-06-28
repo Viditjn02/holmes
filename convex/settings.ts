@@ -15,7 +15,7 @@
 // ============================================================================
 
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { mutation, query, internalQuery } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
 
@@ -29,8 +29,15 @@ const WORKSPACE_KEY = "workspace" as const;
 export interface WorkspaceSettings {
   targetUrl: string;
   targetLabel?: string;
+  // 24/7 AUTONOMOUS master switch (DEFAULT OFF). Gates every keep-running
+  // behavior: when false a track does its task ONCE and stops; when true the
+  // recurring radar/sweep runs. Always present in the read (defaults to false).
+  autonomous: boolean;
   updatedAt?: number;
 }
+
+// Out-of-the-box: autonomy is OFF — nothing loops until the user opts in.
+export const DEFAULT_AUTONOMOUS = false;
 
 /**
  * Normalize an arbitrary URL or domain to a bare host:
@@ -67,12 +74,13 @@ export const getSettings = query({
   handler: async (ctx): Promise<WorkspaceSettings> => {
     const row = await readSingleton(ctx);
     if (!row) {
-      return { targetUrl: DEFAULT_TARGET_URL };
+      return { targetUrl: DEFAULT_TARGET_URL, autonomous: DEFAULT_AUTONOMOUS };
     }
     const targetUrl = row.targetUrl?.trim() || DEFAULT_TARGET_URL;
     return {
       targetUrl,
       targetLabel: row.targetLabel,
+      autonomous: row.autonomous ?? DEFAULT_AUTONOMOUS,
       updatedAt: row.updatedAt,
     };
   },
@@ -109,6 +117,54 @@ export const setTargetUrl = mutation({
       });
     }
 
-    return { targetUrl: normalized, targetLabel: label, updatedAt: now };
+    return {
+      targetUrl: normalized,
+      targetLabel: label,
+      autonomous: existing?.autonomous ?? DEFAULT_AUTONOMOUS,
+      updatedAt: now,
+    };
+  },
+});
+
+/**
+ * setAutonomous — flip the 24/7 master switch. When false (default) every
+ * keep-running behavior is gated off: the cron tick no-ops, so a track does its
+ * task once and stops. When true, the recurring radar/sweep runs. Upserts the
+ * singleton, preserving the target. Public; never throws. Returns the new value.
+ */
+export const setAutonomous = mutation({
+  args: { autonomous: v.boolean() },
+  handler: async (ctx, { autonomous }): Promise<WorkspaceSettings> => {
+    const now = Date.now();
+    const existing = await readSingleton(ctx);
+    if (existing) {
+      await ctx.db.patch(existing._id, { autonomous, updatedAt: now });
+      return {
+        targetUrl: existing.targetUrl?.trim() || DEFAULT_TARGET_URL,
+        targetLabel: existing.targetLabel,
+        autonomous,
+        updatedAt: now,
+      };
+    }
+    // No singleton yet: seed it with the default target + the chosen flag.
+    await ctx.db.insert("settings", {
+      key: WORKSPACE_KEY,
+      targetUrl: DEFAULT_TARGET_URL,
+      autonomous,
+      updatedAt: now,
+    });
+    return { targetUrl: DEFAULT_TARGET_URL, autonomous, updatedAt: now };
+  },
+});
+
+/**
+ * Internal read of the autonomous flag for the cron gate. Defaults to OFF when
+ * the singleton is unset, so nothing loops until the user opts in.
+ */
+export const isAutonomous = internalQuery({
+  args: {},
+  handler: async (ctx): Promise<boolean> => {
+    const row = await readSingleton(ctx);
+    return row?.autonomous ?? DEFAULT_AUTONOMOUS;
   },
 });

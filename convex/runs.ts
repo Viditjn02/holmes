@@ -68,6 +68,67 @@ const agentStatusValidator = v.union(
   v.literal("failed"),
 );
 
+// ---------------------------------------------------------------------------
+// DEDUPE — don't redo just-completed work. A chat/manual ask that exactly
+// repeats a (intent, target) we COMPLETED in the last REUSE_TTL_MS reuses that
+// run (the spawning message is re-pointed at it) instead of re-running. Scoped
+// to interactive triggers only — the cron loop owns its own cadence and must be
+// free to re-run; runs with provenance (sourceUrl/groundedOnAdId/replay) or a
+// campaign, and the side-effectful `outreach` intent, are never deduped.
+// ---------------------------------------------------------------------------
+const REUSE_TTL_MS = 30 * 60_000; // 30 min
+
+/** Normalize a run target to a stable key (host/name) for dedupe + cache match. */
+function normalizeTarget(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    .split("?")[0]
+    .trim();
+}
+
+/**
+ * Find a recent COMPLETED run for the same (intent, target). Scans the newest
+ * completed runs of this intent (indexed) and returns the first whose
+ * normalized input matches and that finished within the TTL. Null on no match.
+ */
+async function findReusableRun(
+  ctx: MutationCtx,
+  intent: Capability,
+  input: string,
+): Promise<Id<"runs"> | null> {
+  const target = normalizeTarget(input);
+  if (!target) return null;
+  const since = Date.now() - REUSE_TTL_MS;
+  const recent = await ctx.db
+    .query("runs")
+    .withIndex("by_intent_status", (q) =>
+      q.eq("intent", intent).eq("status", "complete"),
+    )
+    .order("desc")
+    .take(20);
+  for (const r of recent) {
+    if (r.startedAt < since) continue;
+    if (normalizeTarget(r.input) === target) return r._id;
+  }
+  return null;
+}
+
+/** Whether a spawn is eligible for dedupe-reuse (interactive, no provenance). */
+function eligibleForReuse(args: SpawnRunArgs): boolean {
+  return (
+    (args.trigger === "chat" || args.trigger === "manual") &&
+    args.intent !== "outreach" &&
+    !args.replay &&
+    !args.sourceUrl &&
+    !args.groundedOnAdId &&
+    !args.campaignId
+  );
+}
+
 /**
  * Kick off a capability run. Inserts the run (status "running") with its routed
  * intent + trigger, queues one agentStatus row per BOARD agent for that intent,
@@ -100,6 +161,19 @@ async function spawnRun(ctx: MutationCtx, args: SpawnRunArgs): Promise<Id<"runs"
   const trimmed = args.input.trim();
   if (trimmed.length === 0) {
     throw new Error("spawnRun: input must not be empty");
+  }
+
+  // DEDUPE: reuse a just-completed run for the same (intent, target) instead of
+  // re-running it. Re-point the spawning message at the existing run so the
+  // canvas focuses its (already-settled) board.
+  if (eligibleForReuse(args)) {
+    const reuseId = await findReusableRun(ctx, args.intent, trimmed);
+    if (reuseId) {
+      if (args.messageId) {
+        await ctx.db.patch(args.messageId, { runId: reuseId, intent: args.intent });
+      }
+      return reuseId;
+    }
   }
 
   const now = Date.now();
@@ -352,5 +426,62 @@ export const completeRun = internalMutation({
   },
   handler: async (ctx, { runId, status }): Promise<void> => {
     await ctx.db.patch(runId, { status });
+  },
+});
+
+// ---------------------------------------------------------------------------
+// SHARED-PHASE CACHE — different tracks for the SAME target redo identical
+// upstream phases (company enrich/firmographics). We cache each phase result
+// keyed by `${step}:${target}` with a short TTL so a second track for the same
+// company reuses it instead of re-scraping + re-inferring. Best-effort: a miss
+// (or a stale entry) just recomputes. Consumed by the enrich agent. (Competitor
+// ad discovery is already cached separately via `adScanCache`.)
+// ---------------------------------------------------------------------------
+const STEP_CACHE_TTL_MS = 30 * 60_000; // 30 min — match the run-reuse window
+
+/** Build the `${step}:${target}` cache key with a normalized target. */
+function stepCacheKey(step: string, target: string): string {
+  return `${step}:${normalizeTarget(target)}`;
+}
+
+/** Read a fresh shared-phase result for (step, target), or null on miss/stale. */
+export const getStepCache = internalQuery({
+  args: { step: v.string(), target: v.string() },
+  handler: async (ctx, { step, target }): Promise<unknown | null> => {
+    const key = stepCacheKey(step, target);
+    if (key.endsWith(":")) return null; // empty target — never cache
+    const row = await ctx.db
+      .query("stepCache")
+      .withIndex("by_key", (q) => q.eq("key", key))
+      .unique();
+    if (!row) return null;
+    if (Date.now() - row.fetchedAt > STEP_CACHE_TTL_MS) return null;
+    return row.value;
+  },
+});
+
+/** Upsert a shared-phase result for (step, target). No-op on an empty target. */
+export const putStepCache = internalMutation({
+  args: { step: v.string(), target: v.string(), value: v.any() },
+  handler: async (ctx, { step, target, value }): Promise<void> => {
+    const key = stepCacheKey(step, target);
+    if (key.endsWith(":")) return; // empty target — nothing to key on
+    const normalized = normalizeTarget(target);
+    const now = Date.now();
+    const existing = await ctx.db
+      .query("stepCache")
+      .withIndex("by_key", (q) => q.eq("key", key))
+      .unique();
+    if (existing) {
+      await ctx.db.patch(existing._id, { value, fetchedAt: now });
+    } else {
+      await ctx.db.insert("stepCache", {
+        key,
+        step,
+        target: normalized,
+        value,
+        fetchedAt: now,
+      });
+    }
   },
 });

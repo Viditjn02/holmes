@@ -23,14 +23,12 @@ import SwarmBoard from "./SwarmBoard";
 import DiscoveryBoard from "./DiscoveryBoard";
 import ProspectPipeline from "./ProspectPipeline";
 import EmailQueue from "./EmailQueue";
-import EventFeed from "./EventFeed";
 import AdGallery from "./AdGallery";
 import AdFactoryPanel from "./AdFactoryPanel";
 import CreativePanel from "./CreativePanel";
 import BrainPanel from "./BrainPanel";
 import BrainCanvas from "./BrainCanvas";
 import PanelBoundary from "./ErrorBoundary";
-import LiveMetrics from "./LiveMetrics";
 import ContentCalendar from "./ContentCalendar";
 import PitchLab from "./PitchLab";
 import OnboardingCanvas from "./OnboardingCanvas";
@@ -622,7 +620,9 @@ function CanvasForRun({
       onScroll={onScroll}
       className="col-scroll h-full min-h-0 overflow-y-auto"
     >
-      <div className="mx-auto w-full max-w-4xl px-5 py-5">
+      {/* pb-28 clears the workspace's floating command bar that now overlays the
+          full-width canvas (no more permanent chat column). */}
+      <div className="mx-auto w-full max-w-4xl px-5 pb-28 pt-5">
         {/* run switcher (only when more than one run) */}
         {runs.length > 1 && (
           <div className="mb-4 flex flex-wrap items-center gap-1.5">
@@ -719,12 +719,8 @@ function CanvasForRun({
 
           {/* compounding brain — only renders when it knows something */}
           {company && <BrainPanel company={company} />}
-
-          {/* live activity + analytics */}
-          <div className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
-            <EventFeed runId={run.runId} />
-            <LiveMetrics runId={run.runId} />
-          </div>
+          {/* NOTE: the live-activity feed + analytics live ONLY on the dashboard
+              command center — intentionally NOT duplicated on the board sub-pages. */}
         </div>
       </div>
     </div>

@@ -35,6 +35,85 @@ export default function RootLayout({
       suppressHydrationWarning // theme class is set pre-paint by the script below
     >
       <head>
+        {/* Benign-rejection guard — FIRST thing in <head> so its listeners are
+            registered at HTML-parse time, BEFORE any Next.js / React-refresh dev
+            chunk attaches its own error-overlay handlers. Capture-phase + first
+            registration means we run before the overlay, and
+            stopImmediatePropagation prevents it from ever seeing a benign event.
+
+            What this swallows (and ONLY this): expected network cancellations —
+            TimeoutError / AbortError / "Load failed" / "Failed to fetch" and the
+            same transport noise Convex's local backend emits every time
+            `convex dev` hot-reloads and drops its in-flight WebSocket requests.
+            These are harmless (the client reconnects) but would otherwise pop
+            Next's full-screen dev overlay and block the UI.
+
+            What this DELIBERATELY lets through: every real bug — TypeErrors,
+            thrown render errors, missing-Convex-function errors, etc. We never
+            blanket-hide; if a genuine error reaches here it still surfaces so it
+            can be fixed at the source. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                try {
+                  function isBenign(reason) {
+                    if (!reason) return false;
+                    var name = "";
+                    try {
+                      name = String(
+                        reason.name ||
+                          (reason.constructor && reason.constructor.name) ||
+                          ""
+                      ).toLowerCase();
+                    } catch (e) {}
+                    if (name === "timeouterror" || name === "aborterror") return true;
+                    var msg = "";
+                    try {
+                      msg = String(reason.message != null ? reason.message : reason);
+                    } catch (e) {
+                      msg = "";
+                    }
+                    msg = msg.toLowerCase();
+                    return (
+                      msg.indexOf("timeouterror") !== -1 ||
+                      msg.indexOf("aborterror") !== -1 ||
+                      msg.indexOf("operation timed out") !== -1 ||
+                      msg.indexOf("operation was aborted") !== -1 ||
+                      msg.indexOf("the user aborted a request") !== -1 ||
+                      msg.indexOf("load failed") !== -1 ||
+                      msg.indexOf("failed to fetch") !== -1 ||
+                      msg.indexOf("network request failed") !== -1 ||
+                      msg.indexOf("networkerror when attempting to fetch") !== -1
+                    );
+                  }
+                  function swallow(e) {
+                    try {
+                      if (e && typeof e.preventDefault === "function") e.preventDefault();
+                      if (e && typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
+                      if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+                    } catch (err) {}
+                  }
+                  window.addEventListener(
+                    "unhandledrejection",
+                    function (e) {
+                      if (isBenign(e && e.reason)) swallow(e);
+                    },
+                    true
+                  );
+                  window.addEventListener(
+                    "error",
+                    function (e) {
+                      var reason = e && (e.error != null ? e.error : e.message);
+                      if (isBenign(reason)) swallow(e);
+                    },
+                    true
+                  );
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -45,53 +124,6 @@ export default function RootLayout({
                   root.setAttribute('data-theme', t);
                   root.classList.toggle('dark', t === 'dark');
                   root.style.colorScheme = t === 'dark' ? 'dark' : 'light';
-                } catch (e) {}
-              })();
-            `,
-          }}
-        />
-        {/* Benign-rejection guard — registered in <head> so it runs BEFORE
-            Next.js attaches its dev error-overlay listener. Convex's local
-            http://127.0.0.1 backend drops in-flight requests every time
-            `convex dev` reloads, and Safari rejects them with
-            "TimeoutError: operation timed out". These transport-level
-            timeouts/aborts are harmless (the client reconnects), but an
-            unhandled rejection pops Next's full-screen dev overlay and blocks
-            the UI. We swallow ONLY network timeout/abort noise — real app
-            errors (TypeError, etc.) still surface. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              (function () {
-                try {
-                  function benign(r) {
-                    if (!r) return false;
-                    var n = (r.name ? String(r.name) : "").toLowerCase();
-                    if (n === "timeouterror" || n === "aborterror") return true;
-                    var m = (r.message ? String(r.message) : String(r)).toLowerCase();
-                    return (
-                      m.indexOf("operation timed out") !== -1 ||
-                      m.indexOf("the operation was aborted") !== -1 ||
-                      m.indexOf("timeouterror") !== -1 ||
-                      m.indexOf("aborterror") !== -1 ||
-                      m.indexOf("load failed") !== -1 ||
-                      m.indexOf("failed to fetch") !== -1 ||
-                      m.indexOf("network request failed") !== -1 ||
-                      m.indexOf("networkerror") !== -1
-                    );
-                  }
-                  window.addEventListener("unhandledrejection", function (e) {
-                    if (benign(e && e.reason)) {
-                      e.preventDefault();
-                      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-                    }
-                  }, true);
-                  window.addEventListener("error", function (e) {
-                    if (benign(e && (e.error || e.message))) {
-                      e.preventDefault();
-                      if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-                    }
-                  }, true);
                 } catch (e) {}
               })();
             `,

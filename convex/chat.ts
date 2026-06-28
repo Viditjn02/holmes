@@ -336,13 +336,17 @@ function defaultAck(decision: RouterDecision): string {
 }
 
 // ----------------------------------------------------------------------------
-// COMPOUND-PROMPT FAN-OUT — "find competitors AND customers AND ads" must run ALL
-// the matching capabilities, not just the one the classifier picked. The bug was
-// that such a prompt routed to a single intent (the ad path) so Orange Slice +
-// Fiber (the "customers" outbound path) never fired. We detect every capability
-// the message asks for and spawn a SEPARATE run (each with its own board on the
-// canvas) for the extras beyond the primary. Purely additive: a single-intent
-// prompt has no conjunction → no extras → byte-identical to before.
+// COMPOUND-PROMPT FAN-OUT — DEFAULT = ONE TASK. A genuine compound ask like
+// "find customers for X AND scan their competitor ads" should run BOTH tracks,
+// each on its own board. But a PLAIN single ask ("make me an ad for brex") must
+// run EXACTLY ONE intent — it must NOT expand into the whole stack. So the gate
+// is deliberately tight: we fan out ONLY when the message both (a) joins clauses
+// with a conjunction ("and"/","/"+"/"also"/…) AND (b) EXPLICITLY names >= 2
+// DISTINCT tracks via unambiguous track keywords. The detector is conservative
+// (e.g. bare "ads" with no create verb / no competitor signal is left to the
+// primary intent, never expanded into both competitor + content). The dashboard
+// fires one intent per card and never hits this path. No conjunction OR a single
+// named track → zero extras → byte-identical to a one-intent run.
 // ----------------------------------------------------------------------------
 
 /** Short board labels for the fan-out summary line. */
@@ -359,7 +363,8 @@ const EXTRA_LABEL: Record<Capability, string> = {
   scout: "github projects",
 };
 
-/** A compound ask joins capabilities with a conjunction — only then do we fan out. */
+/** A compound ask joins clauses with a conjunction — a PRECONDITION for fan-out
+ *  (not sufficient on its own; we also require >= 2 explicitly named tracks). */
 function hasConjunction(text: string): boolean {
   return /\band\b|\balso\b|\bplus\b|\bthen\b|,|\+|&/.test(text);
 }
@@ -367,49 +372,49 @@ function hasConjunction(text: string): boolean {
 const CREATE_VERB = /\b(make|generate|create|build|write|design|produce|spin up)\b/;
 
 /**
- * Detect EVERY run-spawning capability a (possibly compound) message asks for.
- * Maps the spec's terms: customers→outbound (Orange Slice + Fiber), competitors/
- * ads(scan)→competitor (adscout), ads(create)/video→content (adsmith/creative),
- * plus discovery/social/onboarding. Never throws.
+ * Detect the run-spawning tracks a message EXPLICITLY names. Deliberately
+ * CONSERVATIVE — each track is added only on an unambiguous signal so a single
+ * ask never expands into the whole stack:
+ *   • bare "ads" with no create verb and no competitor signal adds NEITHER
+ *     competitor nor content (it's left to the classifier's primary intent);
+ *   • competitor (scan) needs an explicit rival / "their ads" / "scan ads" /
+ *     "ad library" / "what ads" signal;
+ *   • content (create) needs a create verb on an ad/video, or an explicit
+ *     "similar ad" / "ad creative" / "video ad" / "image ad" phrase.
+ * Used ONLY to find EXTRA tracks for a genuine compound ask. Never throws.
  */
 function detectCapabilities(userText: string): Set<Capability> {
   const text = userText.toLowerCase();
   const caps = new Set<Capability>();
   const has = (re: RegExp) => re.test(text);
 
-  // customers → OUTBOUND (Orange Slice + Fiber MUST run).
+  // customers → OUTBOUND (Orange Slice + Fiber).
   if (
     has(/\b(customers?|leads?|prospects?|buyers?)\b/) ||
-    has(/\bfind customers\b/) ||
-    has(/\bsell to\b/) ||
     has(/\bdecision[- ]?makers?\b/) ||
     has(/\boutbound\b/) ||
+    has(/\bsell to\b/) ||
     has(/\bemails? for\b/)
   ) {
     caps.add("outbound");
   }
 
-  // competitors / their ads → COMPETITOR (adscout discovers rivals + scans ads).
+  // competitors / their LIVE ads → COMPETITOR (scan). Explicit signals only.
   const mentionsCompetitor = has(/\b(competitors?|rivals?|alternatives?)\b/);
-  if (mentionsCompetitor) caps.add("competitor");
+  const scanSignal =
+    has(/\b(their|competitor'?s?) ads?\b/) ||
+    has(/\b(scan|show|top|winning|running) ads?\b/) ||
+    has(/\bad library\b/) ||
+    has(/\bwhat ads?\b/) ||
+    has(/\bwhat are they running\b/);
+  if (mentionsCompetitor || scanSignal) caps.add("competitor");
 
-  const mentionsAds = has(/\bads?\b/) || has(/\bad creative\b/) || has(/\bcreative\b/);
-  if (mentionsAds) {
-    // "show/scan ads" = competitor scan.
-    caps.add("competitor");
-    // "make ads" = content; also when competitors are named separately (the scan
-    // is already covered, so "ads" reads as a deliverable = generate ads).
-    if (
-      has(CREATE_VERB) ||
-      mentionsCompetitor ||
-      has(/\b(ad creative|video ad|image ad|ad copy|similar ad)\b/)
-    ) {
-      caps.add("content");
-    }
-  }
-
-  // launch video / make a video → CONTENT.
-  if (has(/\bvideo\b/) && has(CREATE_VERB)) caps.add("content");
+  // make/generate an ad or video → CONTENT (create). Needs a create verb on an
+  // ad/video, or an explicit create-ad phrase.
+  const createsAd =
+    (has(CREATE_VERB) && has(/\b(ads?|video|creative|image ad|ad copy)\b/)) ||
+    has(/\b(similar ad|ad creative|video ad|image ad)\b/);
+  if (createsAd) caps.add("content");
 
   // the moat → DISCOVERY.
   if (has(/\bthreads?\b|\bcommunit|\breddit\b|\bhacker news\b|\bconversations?\b/)) {
@@ -420,14 +425,14 @@ function detectCapabilities(userText: string): Set<Capability> {
   if (has(/\bviral\b|\btrend(ing|s)?\b|\breel\b|\bcontent calendar\b/)) caps.add("social");
 
   // PLG → ONBOARDING.
-  if (has(/\bonboarding\b|\bproduct tour\b|\bwalkthrough\b|\bfirst[- ]run\b/)) {
+  if (has(/\bonboarding\b|\bproduct tour\b|\bwalkthrough\b|\bfirst[- ]run\b|\bplg\b/)) {
     caps.add("onboarding");
   }
 
   // GitHub artifact intelligence → SCOUT.
   if (
     has(/\bhackathon\b|\bgithub org\b|\bgithub topic\b/) ||
-    has(/\b(scout|dissect|analyze|enumerate) (the )?(repos?|projects?)\b/) ||
+    has(/\b(scout|dissect|enumerate) (the )?(repos?|projects?)\b/) ||
     has(/\b(what|who)('?s| is| are)? (everyone|people) building\b/)
   ) {
     caps.add("scout");
@@ -454,9 +459,20 @@ async function fanOutExtras(
   decision: RouterDecision,
   userText: string,
 ): Promise<Capability[]> {
+  // Gate 1: a real conjunction must join the clauses. A plain single ask (no
+  // "and"/","/"+"/"also") NEVER fans out — it runs exactly one intent.
   if (!hasConjunction(userText.toLowerCase())) return [];
 
   const primary = decision.intent as Capability;
+
+  // Gate 2: the message must EXPLICITLY name >= 2 DISTINCT tracks. We union the
+  // classifier's primary with every explicitly-named track; only a genuine
+  // compound (>= 2 distinct) is allowed to expand. This is what stops a single
+  // command from ballooning into the whole stack.
+  const named = detectCapabilities(userText);
+  const distinctTracks = new Set<Capability>([primary, ...named]);
+  if (distinctTracks.size < 2) return [];
+
   const covered = new Set<Capability>([primary]);
   // Never auto-fan-out these explicit/destructive or redundant intents.
   covered.add("outreach");
@@ -464,7 +480,7 @@ async function fanOutExtras(
   covered.add("analyze");
   if (primary === "analyze") for (const c of ANALYZE_COVERS) covered.add(c);
 
-  const extras = [...detectCapabilities(userText)]
+  const extras = [...named]
     .filter((c) => !covered.has(c))
     .slice(0, 3);
   if (extras.length === 0) return [];
