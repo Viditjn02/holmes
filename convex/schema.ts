@@ -700,6 +700,11 @@ export default defineSchema({
     // track does its task ONCE and stops. When true, the recurring radar runs.
     // Optional so existing rows (written before this field) read as OFF.
     autonomous: v.optional(v.boolean()),
+    // VIDEO AD ORIENTATION (DEFAULT "portrait" 9:16). The user toggle that the
+    // Creative video lane threads to every provider + the worker via
+    // lib/contract.aspectRatioFor. Optional so existing rows (written before this
+    // field) read as the portrait default. Mirrors lib/contract.AdAspect.
+    videoAspect: v.optional(v.union(v.literal("portrait"), v.literal("landscape"))),
     updatedAt: v.number(),
   }).index("by_key", ["key"]),
 

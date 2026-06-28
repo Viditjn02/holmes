@@ -36,7 +36,7 @@
 import { v } from "convex/values";
 import { internalAction, internalMutation, internalQuery } from "../_generated/server";
 import type { ActionCtx } from "../_generated/server";
-import { internal } from "../_generated/api";
+import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import {
   MAX_THREADS,
@@ -51,11 +51,23 @@ import { renderVideo } from "../../lib/videoWorker";
 
 const VEO_MODEL = "veo-3.1-fast";
 const WAVESPEED_MODEL = "wavespeed-ltx-2.3";
-// Aspect option (landscape "16:9" / portrait "9:16", default portrait). Threaded
-// through to every provider + the local worker. Flip to "landscape" for 16:9.
-const AD_ASPECT: AdAspect = DEFAULT_AD_ASPECT;
-const AD_ASPECT_RATIO: AspectRatio = aspectRatioFor(AD_ASPECT); // "9:16" | "16:9"
 const AD_DURATION_SECONDS = 8;
+
+// ----------------------------------------------------------------------------
+// Aspect option (landscape "16:9" / portrait "9:16") is now a persisted USER
+// TOGGLE on the settings singleton (settings.getSettings → videoAspect), not a
+// module constant. The `run` action reads it and threads the resolved
+// AspectRatio through every provider + the local worker. Graceful: a missing
+// setting / query failure degrades to the portrait default — never throws.
+// ----------------------------------------------------------------------------
+async function readVideoAspect(ctx: ActionCtx): Promise<AdAspect> {
+  try {
+    const settings = await ctx.runQuery(api.settings.getSettings, {});
+    return settings?.videoAspect ?? DEFAULT_AD_ASPECT;
+  } catch {
+    return DEFAULT_AD_ASPECT;
+  }
+}
 
 // ----------------------------------------------------------------------------
 // READ: gather everything the swarm has produced so far for this run.
@@ -163,7 +175,13 @@ export const run = internalAction({
   args: { runId: v.id("runs") },
   handler: async (ctx, { runId }) => {
     const data = await ctx.runQuery(internal.agents.creative.context, { runId });
-    const prompt = buildAdPrompt(data);
+
+    // The persisted USER TOGGLE — portrait (9:16) / landscape (16:9). Resolved to
+    // the wire AspectRatio threaded through every provider + the worker. Graceful
+    // default portrait when the setting is unset or the query fails.
+    const aspect = await readVideoAspect(ctx);
+    const ratio: AspectRatio = aspectRatioFor(aspect);
+    const prompt = buildAdPrompt(data, ratio);
 
     // Mark rendering immediately so the live board reflects the early kick.
     await ctx.runMutation(internal.agents.creative.save, {
@@ -179,7 +197,7 @@ export const run = internalAction({
     try {
       // 1) WaveSpeed LTX-2.3 (WAVESPEED_API_KEY) — plain HTTPS, works DEPLOYED.
       //    Animates the gpt-image-1 ad poster (image-to-video). Needs the poster.
-      const ws = await tryWavespeed(data, prompt, AD_ASPECT_RATIO, AD_DURATION_SECONDS);
+      const ws = await tryWavespeed(data, prompt, ratio, AD_DURATION_SECONDS);
       if (ws) {
         await persistExternalVideo(ctx, runId, prompt, ws.model, ws.url);
         return;
@@ -189,7 +207,7 @@ export const run = internalAction({
       //    multi-provider client. Returns { url: undefined } (no throw) on a miss.
       const result = await generateAd({
         prompt,
-        aspectRatio: AD_ASPECT_RATIO,
+        aspectRatio: ratio,
         durationSeconds: AD_DURATION_SECONDS,
       });
       if (result.url) {
@@ -199,7 +217,7 @@ export const run = internalAction({
 
       // 4) FREE local Ken-Burns worker (VIDEO_WORKER_URL) — $0, localhost only, so
       //    it's the LAST resort (it can't run from a deployed Convex action).
-      const free = await tryFreeWorker(ctx, runId, data, prompt);
+      const free = await tryFreeWorker(ctx, runId, data, prompt, ratio);
       if (free) {
         await ctx.runMutation(internal.agents.creative.save, {
           runId,
@@ -312,13 +330,14 @@ async function tryFreeWorker(
   runId: Id<"runs">,
   data: AdContext,
   prompt: string,
+  ratio: AspectRatio,
 ): Promise<{ url?: string; storageId?: Id<"_storage">; model: string } | null> {
   try {
     const result = await renderVideo({
       topic: data.company,
       script: prompt,
       scenes: buildAdScenes(data),
-      aspectRatio: AD_ASPECT_RATIO,
+      aspectRatio: ratio,
       durationSeconds: AD_DURATION_SECONDS,
       // Hand the gpt-image-1 ad image to the worker → KEN-BURNS FAST PATH
       // (animate the image in seconds). Absent ⇒ worker uses Pexels. Graceful.
@@ -389,8 +408,11 @@ interface AdContext {
   posterUrl: string | null;
 }
 
-function buildAdPrompt(data: AdContext): string {
+function buildAdPrompt(data: AdContext, ratio: AspectRatio): string {
   const { company, icp, positioning, threads, reelInsight } = data;
+  // Orientation word matching the chosen aspect, so the prompt reads naturally
+  // for both the portrait (9:16) feed cut and the landscape (16:9) widescreen cut.
+  const orientation = ratio === "16:9" ? "widescreen" : "vertical";
 
   // Surface the highest-intent buyer language first — it's the most authentic
   // hook material we have.
@@ -425,7 +447,7 @@ function buildAdPrompt(data: AdContext): string {
     : "Punchy, high-contrast, modern tech-brand energy with confident motion and crisp typography.";
 
   return [
-    `A ${AD_DURATION_SECONDS}-second vertical (${AD_ASPECT_RATIO}) cinematic product ad for ${company}.`,
+    `A ${AD_DURATION_SECONDS}-second ${orientation} (${ratio}) cinematic product ad for ${company}.`,
     painLine,
     audienceLine,
     positioningLine,

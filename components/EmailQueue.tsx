@@ -250,6 +250,17 @@ export default function EmailQueue({ runId }: { runId: Id<"runs"> }) {
     return by;
   }, [emails]);
 
+  // Drafts the studio can design: anything not yet sent. Top one is prefilled.
+  // MUST be declared BEFORE any conditional return — every hook runs every render
+  // (this was the React hooks-order crash).
+  const designable = useMemo(
+    () =>
+      [...groups.draft, ...groups.approved].sort(
+        (a, b) => a.step - b.step || a.createdAt - b.createdAt,
+      ),
+    [groups.draft, groups.approved],
+  );
+
   if (emails === undefined) {
     return (
       <div className="space-y-2">
@@ -262,15 +273,6 @@ export default function EmailQueue({ runId }: { runId: Id<"runs"> }) {
 
   const awaiting = groups.draft.length;
   const skipped = groups.skipped.length;
-
-  // Drafts the studio can design: anything not yet sent. Top one is prefilled.
-  const designable = useMemo(
-    () =>
-      [...groups.draft, ...groups.approved].sort(
-        (a, b) => a.step - b.step || a.createdAt - b.createdAt,
-      ),
-    [groups.draft, groups.approved],
-  );
 
   // Funnel readout, consistent with the pipeline's left→right story.
   const funnel: { label: string; n: number }[] = [

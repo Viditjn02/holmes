@@ -18,6 +18,7 @@ import { v } from "convex/values";
 import { mutation, query, internalQuery } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import type { Doc } from "./_generated/dataModel";
+import { DEFAULT_AD_ASPECT, type AdAspect } from "../lib/contract";
 
 // The sensible out-of-the-box default when nothing has been persisted yet.
 export const DEFAULT_TARGET_URL = "nolongerjobless.com";
@@ -33,11 +34,19 @@ export interface WorkspaceSettings {
   // behavior: when false a track does its task ONCE and stops; when true the
   // recurring radar/sweep runs. Always present in the read (defaults to false).
   autonomous: boolean;
+  // VIDEO AD ORIENTATION (DEFAULT "portrait"). The user toggle the Creative video
+  // lane reads to thread the aspect to every provider. Always present in the read.
+  videoAspect: AdAspect;
   updatedAt?: number;
 }
 
 // Out-of-the-box: autonomy is OFF — nothing loops until the user opts in.
 export const DEFAULT_AUTONOMOUS = false;
+
+// Out-of-the-box: portrait (9:16) — built for the feeds the buyers live in.
+// Single source of truth is lib/contract.DEFAULT_AD_ASPECT; re-exported here so
+// the settings reader has a local default to seed.
+export const DEFAULT_VIDEO_ASPECT: AdAspect = DEFAULT_AD_ASPECT;
 
 /**
  * Normalize an arbitrary URL or domain to a bare host:
@@ -74,13 +83,18 @@ export const getSettings = query({
   handler: async (ctx): Promise<WorkspaceSettings> => {
     const row = await readSingleton(ctx);
     if (!row) {
-      return { targetUrl: DEFAULT_TARGET_URL, autonomous: DEFAULT_AUTONOMOUS };
+      return {
+        targetUrl: DEFAULT_TARGET_URL,
+        autonomous: DEFAULT_AUTONOMOUS,
+        videoAspect: DEFAULT_VIDEO_ASPECT,
+      };
     }
     const targetUrl = row.targetUrl?.trim() || DEFAULT_TARGET_URL;
     return {
       targetUrl,
       targetLabel: row.targetLabel,
       autonomous: row.autonomous ?? DEFAULT_AUTONOMOUS,
+      videoAspect: row.videoAspect ?? DEFAULT_VIDEO_ASPECT,
       updatedAt: row.updatedAt,
     };
   },
@@ -121,6 +135,7 @@ export const setTargetUrl = mutation({
       targetUrl: normalized,
       targetLabel: label,
       autonomous: existing?.autonomous ?? DEFAULT_AUTONOMOUS,
+      videoAspect: existing?.videoAspect ?? DEFAULT_VIDEO_ASPECT,
       updatedAt: now,
     };
   },
@@ -143,6 +158,7 @@ export const setAutonomous = mutation({
         targetUrl: existing.targetUrl?.trim() || DEFAULT_TARGET_URL,
         targetLabel: existing.targetLabel,
         autonomous,
+        videoAspect: existing.videoAspect ?? DEFAULT_VIDEO_ASPECT,
         updatedAt: now,
       };
     }
@@ -153,7 +169,52 @@ export const setAutonomous = mutation({
       autonomous,
       updatedAt: now,
     });
-    return { targetUrl: DEFAULT_TARGET_URL, autonomous, updatedAt: now };
+    return {
+      targetUrl: DEFAULT_TARGET_URL,
+      autonomous,
+      videoAspect: DEFAULT_VIDEO_ASPECT,
+      updatedAt: now,
+    };
+  },
+});
+
+/**
+ * setVideoAspect — set the generated video ad's ORIENTATION (portrait 9:16 /
+ * landscape 16:9). Upserts the workspace singleton, preserving the target +
+ * autonomous flag. The Creative video lane reads this (settings.getSettings) and
+ * threads it to every provider via lib/contract.aspectRatioFor. Mirrors the
+ * setTargetUrl/setAutonomous pattern: public, never throws, returns the new value.
+ */
+export const setVideoAspect = mutation({
+  args: {
+    aspect: v.union(v.literal("portrait"), v.literal("landscape")),
+  },
+  handler: async (ctx, { aspect }): Promise<WorkspaceSettings> => {
+    const now = Date.now();
+    const existing = await readSingleton(ctx);
+    if (existing) {
+      await ctx.db.patch(existing._id, { videoAspect: aspect, updatedAt: now });
+      return {
+        targetUrl: existing.targetUrl?.trim() || DEFAULT_TARGET_URL,
+        targetLabel: existing.targetLabel,
+        autonomous: existing.autonomous ?? DEFAULT_AUTONOMOUS,
+        videoAspect: aspect,
+        updatedAt: now,
+      };
+    }
+    // No singleton yet: seed it with the default target + the chosen orientation.
+    await ctx.db.insert("settings", {
+      key: WORKSPACE_KEY,
+      targetUrl: DEFAULT_TARGET_URL,
+      videoAspect: aspect,
+      updatedAt: now,
+    });
+    return {
+      targetUrl: DEFAULT_TARGET_URL,
+      autonomous: DEFAULT_AUTONOMOUS,
+      videoAspect: aspect,
+      updatedAt: now,
+    };
   },
 });
 

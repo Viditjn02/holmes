@@ -195,10 +195,8 @@ export default function DashboardHome({
         style={BAR_FADE_MASK}
       >
         <header className="mb-4">
-          {/* Soft pastel color-block behind the key header — one tasteful pop of
-              colour on an otherwise stark white landing (Figma sticky-note system). */}
-          <div className="inline-flex flex-col gap-0.5 rounded-lg bg-block-lime/60 px-4 py-3">
-            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink/55">
+          <div className="flex flex-col gap-0.5">
+            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink/45">
               GTM Command Center
             </p>
             <h1 className="text-[21px] font-fig-headline leading-tight tracking-tight text-ink">
@@ -228,7 +226,7 @@ export default function DashboardHome({
       {/* ── right rail: COMPACT live-activity feed. Capped to a short fixed
           height (upper portion) so it reads as a glance-able ticker, never a
           long column (founder asked twice to shorten it). ────────────────── */}
-      <aside className="hidden w-[300px] shrink-0 border-l border-hairline bg-canvas p-3 lg:block">
+      <aside className="hidden w-[300px] shrink-0 bg-canvas p-3 lg:block">
         <div className="flex max-h-[300px] flex-col overflow-hidden rounded-xl border border-hairline bg-canvas shadow-soft">
           <ActivityFeed runs={runs} />
         </div>
