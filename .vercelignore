@@ -1,0 +1,10 @@
+# Vercel CLI uses THIS instead of .gitignore for uploads.
+# We deliberately do NOT list convex/_generated here, so the generated
+# @/convex types ARE uploaded and the Next build resolves them.
+node_modules
+.next
+.git
+.env
+.env.local
+.env.*.local
+scratchpad
