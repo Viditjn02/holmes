@@ -1,0 +1,11 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env*.local
+.worktrees/
+.DS_Store
+*.tsbuildinfo
+next-env.d.ts
+convex/_generated/
