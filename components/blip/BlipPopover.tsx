@@ -1,22 +1,22 @@
 "use client";
 
 /**
- * MascotPopover — the small, GLANCEABLE status card that opens when you click
- * Acey. It answers, at a glance: what is the swarm working on, how much has it
+ * BlipPopover — the small, GLANCEABLE status card that opens when you click
+ * Blip. It answers, at a glance: what is the swarm working on, how much has it
  * found, and how much does the brain now know — plus ONE optional next-action
  * nudge and quick links. It is a Tier-2 floating overlay (glass chrome you look
  * THROUGH), 1px-bordered, never animating backdrop-filter.
  *
- * Pure presentational: all data + the action come from props (useMascotIntel +
+ * Pure presentational: all data + the action come from props (useBlipIntel +
  * the parent's createRun wiring). Graceful: with no focused run it greets the
  * empty state instead of showing blanks. Never throws.
  */
 
-import type { MascotBrain, MascotStatus, NextAction } from "./useMascotIntel";
+import type { BlipBrain, BlipStatus, NextAction } from "./useBlipIntel";
 
-interface MascotPopoverProps {
-  status: MascotStatus;
-  brain: MascotBrain;
+interface BlipPopoverProps {
+  status: BlipStatus;
+  brain: BlipBrain;
   nextAction: NextAction | null;
   /** Focus the status run's canvas (if any). */
   onFocusRun?: () => void;
@@ -28,7 +28,7 @@ interface MascotPopoverProps {
   onClose: () => void;
 }
 
-export default function MascotPopover({
+export default function BlipPopover({
   status,
   brain,
   nextAction,
@@ -36,15 +36,15 @@ export default function MascotPopover({
   onOpenBrain,
   onAct,
   onClose,
-}: MascotPopoverProps) {
+}: BlipPopoverProps) {
   const hasWork = !!status.company;
   const found = status.found ?? 0;
 
   return (
     <div
       role="dialog"
-      aria-label="Acey status"
-      className="mascot-glass pointer-events-auto w-[244px] rounded-2xl rounded-br-sm border border-hairline p-3 text-left text-ink shadow-xl"
+      aria-label="Blip status"
+      className="blip-glass pointer-events-auto w-[244px] rounded-2xl rounded-br-sm border border-hairline p-3 text-left text-ink shadow-xl"
       style={{
         // Tier-2 glass — backdrop on the CHROME, solid fallback under
         // prefers-reduced-transparency (see the <style> block below).
@@ -58,7 +58,7 @@ export default function MascotPopover({
       {/* Header line */}
       <div className="mb-1.5 flex items-center justify-between gap-2">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-ink/60">
-          {status.running ? "working…" : "Acey"}
+          {status.running ? "working…" : "Blip"}
         </span>
         <button
           type="button"
@@ -157,7 +157,7 @@ function ReducedTransparencyFallback() {
   return (
     <style>{`
 @media (prefers-reduced-transparency: reduce) {
-  .mascot-glass { background: rgb(var(--canvas, 255 255 255)) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+  .blip-glass { background: rgb(var(--canvas, 255 255 255)) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 }
 `}</style>
   );

@@ -23,11 +23,29 @@
 
 import { chatJSON } from "./openai";
 import { enrichCompany, discoverCompanies, hasOrangeSliceKey } from "./orangeslice";
+import { webScrape, supadataEnabled } from "./supadata";
 
 export interface Competitor {
   name: string;
   domain?: string;
   why?: string;
+}
+
+/**
+ * A lightweight, dossier-ready read of a single competitor: what they're
+ * building plus their strengths/gaps. Derived from a Supadata homepage scrape →
+ * OpenAI summary. Purely additive — omitted entirely when the scrape/LLM is
+ * unavailable, so callers always treat it as optional.
+ */
+export interface CompetitorAnalysis {
+  whatTheyreBuilding: string;
+  pros: string[];
+  cons: string[];
+}
+
+export interface AnalyzeCompetitorsOpts {
+  /** How many of the top competitors to analyze (clamped 1..3). */
+  limit?: number;
 }
 
 export interface DiscoverCompetitorsOpts {
@@ -242,4 +260,105 @@ export async function discoverCompetitors(
   }
 
   return dedupe(out).slice(0, cap);
+}
+
+// ----------------------------------------------------------------------------
+// COMPETITOR ANALYSIS — for the top 2-3 discovered competitors, scrape their
+// homepage (Supadata, graceful + rate-limit-guarded) and summarize with OpenAI
+// into { whatTheyreBuilding, pros, cons }. NEVER throws and is FULLY optional:
+//   - No Supadata key            → empty map (we have nothing to scrape).
+//   - Scrape rate-limited / empty → that competitor is skipped (rate-limit stops
+//                                   early to respect the free tier).
+//   - No OpenAI key / bad JSON    → that competitor is skipped.
+// Returned map is keyed by the competitor's lowercased name so callers can match
+// it against an ad's `advertiser`.
+// ----------------------------------------------------------------------------
+
+/** Stable lookup key for a competitor name (matches an ad's `advertiser`). */
+export function competitorNameKey(name: string): string {
+  return (name ?? "").trim().toLowerCase();
+}
+
+function cleanStr(value: unknown, max: number): string {
+  if (typeof value !== "string") return "";
+  return value.replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function cleanList(value: unknown, maxItems: number, maxLen: number): string[] {
+  if (!Array.isArray(value)) return [];
+  const out: string[] = [];
+  for (const item of value) {
+    const s = cleanStr(item, maxLen);
+    if (s) out.push(s);
+    if (out.length >= maxItems) break;
+  }
+  return out;
+}
+
+/** Normalize/clamp a raw LLM analysis; null when there's nothing usable. */
+function normalizeAnalysis(
+  raw: Partial<CompetitorAnalysis> | null | undefined,
+): CompetitorAnalysis | null {
+  if (!raw) return null;
+  const whatTheyreBuilding = cleanStr(raw.whatTheyreBuilding, 280);
+  const pros = cleanList(raw.pros, 4, 120);
+  const cons = cleanList(raw.cons, 4, 120);
+  if (!whatTheyreBuilding && pros.length === 0 && cons.length === 0) return null;
+  return { whatTheyreBuilding, pros, cons };
+}
+
+export async function analyzeCompetitors(
+  competitors: Competitor[],
+  opts: AnalyzeCompetitorsOpts = {},
+): Promise<Map<string, CompetitorAnalysis>> {
+  const out = new Map<string, CompetitorAnalysis>();
+  if (!Array.isArray(competitors) || competitors.length === 0) return out;
+  // Supadata is the scraping ground; without a key there's nothing to read, so
+  // we omit analysis entirely rather than guessing.
+  if (!supadataEnabled()) return out;
+
+  const cap = Math.max(1, Math.min(opts.limit ?? 3, 3));
+  // Only competitors with a real root domain can be scraped.
+  const targets = competitors.filter((c) => cleanDomain(c.domain)).slice(0, cap);
+
+  for (const c of targets) {
+    const domain = cleanDomain(c.domain);
+    if (!domain) continue;
+
+    let scraped;
+    try {
+      scraped = await webScrape(`https://${domain}`);
+    } catch {
+      continue; // webScrape shouldn't throw, but stay defensive.
+    }
+    if (!scraped.ok || !scraped.data) {
+      // Respect the free tier: if we're being throttled, stop scraping the rest.
+      if (scraped.reason === "rate_limited") break;
+      continue;
+    }
+
+    try {
+      const r = await chatJSON<Partial<CompetitorAnalysis>>({
+        system:
+          "You are a competitive-intelligence analyst. From a competitor's homepage copy, " +
+          "summarize concisely and factually. Do not invent features the copy doesn't support.",
+        user:
+          `COMPETITOR: ${c.name} (${domain})\n` +
+          `WHY THEY'RE A RIVAL: ${c.why ?? "(direct competitor)"}\n\n` +
+          `HOMEPAGE COPY (markdown, truncated):\n${scraped.data.markdown.slice(0, 4000)}\n\n` +
+          "Return: whatTheyreBuilding = one tight sentence on the product + who it's for; " +
+          "pros = up to 3 genuine strengths; cons = up to 3 likely weaknesses/gaps a challenger could exploit.",
+        schemaHint:
+          '{ "whatTheyreBuilding": string, "pros": string[], "cons": string[] }',
+        temperature: 0.3,
+        maxTokens: 500,
+      });
+      const analysis = normalizeAnalysis(r);
+      if (analysis) out.set(competitorNameKey(c.name), analysis);
+    } catch {
+      // No OpenAI key / bad JSON → omit this competitor's analysis.
+    }
+  }
+
+  return out;
 }

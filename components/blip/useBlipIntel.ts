@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * useMascotIntel — the COMPANION-INTELLIGENCE layer that deepens Acey from a
+ * useBlipIntel — the COMPANION-INTELLIGENCE layer that deepens Blip from a
  * reactive sprite into a proactive, gets-smarter, win-bringing buddy. It sits
- * BESIDE useMascotReactions (which owns mood + ambient one-liners) and adds the
+ * BESIDE useBlipReactions (which owns mood + ambient one-liners) and adds the
  * three "smart" signals the corner companion surfaces:
  *
  *   1. PROACTIVE WINS — subscribes to api.conversations.recentProactive (the 24/7
@@ -14,7 +14,7 @@
  *      compounding wiki grows. Clicking the badge opens the Brain canvas.
  *   3. GLANCEABLE STATUS — folds the focused run (company / found counts) + brain
  *      facts into a tiny status object for the click-to-open popover, plus a
- *      single NEXT-ACTION nudge ("draft outreach to Acme?") that triggers a real
+ *      single NEXT-ACTION nudge ("draft outreach to Northwind?") that triggers a real
  *      run via the existing createRun helper (NOT a chat input).
  *
  * GRACEFUL BY CONTRACT: every subscription is "skip"-able and every field is
@@ -34,7 +34,7 @@ const PROACTIVE_FRESH_MS = 36 * 60 * 60 * 1000; // 36h
 /** Antenna reaches full brightness around this many learned facts. */
 const GLOW_FULL_FACTS = 160;
 /** localStorage key prefix for "already showed this proactive win" (dedupe across reloads). */
-const SEEN_KEY = "intercept.acey.seenProactive";
+const SEEN_KEY = "intercept.blip.seenProactive";
 
 // ---- public shapes --------------------------------------------------------
 export interface ProactiveWin {
@@ -48,7 +48,7 @@ export interface ProactiveWin {
   createdAt: number;
 }
 
-export interface MascotBrain {
+export interface BlipBrain {
   facts: number;
   pages: number;
   lastUpdatedAt: number;
@@ -58,7 +58,7 @@ export interface MascotBrain {
   glow: number;
 }
 
-export interface MascotStatus {
+export interface BlipStatus {
   /** The company/subject the focused run is working on, if any. */
   company: string | null;
   /** Leads found on the focused run (qualified → sourced fallback), if any. */
@@ -73,7 +73,7 @@ export interface MascotStatus {
 
 /** A single, real next-action the popover/bubble can trigger via createRun. */
 export interface NextAction {
-  /** Human label, e.g. "draft outreach to Acme?". */
+  /** Human label, e.g. "draft outreach to Northwind?". */
   label: string;
   /** createRun args (a subset — the component fills trigger/inputType defaults). */
   intent:
@@ -91,20 +91,20 @@ export interface NextAction {
   conversationId: Id<"conversations"> | null;
 }
 
-export interface MascotIntel {
+export interface BlipIntel {
   /** The newest unseen overnight win, or null. */
   proactiveWin: ProactiveWin | null;
   /** Dismiss the current proactive win (and remember it so it won't nag on reload). */
   dismissProactive: () => void;
   /** Brain growth signals (always present; zeros for an empty brain). */
-  brain: MascotBrain;
+  brain: BlipBrain;
   /** Glanceable status for the click-to-open popover. */
-  status: MascotStatus;
+  status: BlipStatus;
   /** ONE next-action suggestion after a win, or null. */
   nextAction: NextAction | null;
 }
 
-interface UseMascotIntelOptions {
+interface UseBlipIntelOptions {
   runId?: Id<"runs"> | null;
   conversationId?: Id<"conversations"> | null;
   enabled?: boolean;
@@ -141,7 +141,7 @@ interface RunDoc {
   contactedCount?: number;
 }
 
-export function useMascotIntel(options: UseMascotIntelOptions = {}): MascotIntel {
+export function useBlipIntel(options: UseBlipIntelOptions = {}): BlipIntel {
   const { runId = null, conversationId = null, enabled = true } = options;
 
   // ----- live subscriptions (all "skip"-able; missing → graceful null) -----
@@ -203,7 +203,7 @@ export function useMascotIntel(options: UseMascotIntelOptions = {}): MascotIntel
     baselineFacts.current === null ? 0 : Math.max(0, facts - baselineFacts.current);
   const glow = Math.max(0, Math.min(1, facts / GLOW_FULL_FACTS));
 
-  const brain: MascotBrain = useMemo(
+  const brain: BlipBrain = useMemo(
     () => ({
       facts,
       pages: stats?.pages ?? 0,
@@ -216,7 +216,7 @@ export function useMascotIntel(options: UseMascotIntelOptions = {}): MascotIntel
 
   // ===== 3. GLANCEABLE STATUS + NEXT-ACTION ===============================
   const running = !!runs && runs.some((r) => r.status === "running");
-  const status: MascotStatus = useMemo(() => {
+  const status: BlipStatus = useMemo(() => {
     const company =
       focusedRun?.company || (focusedRun ? focusedRun.input : null) || null;
     const found =

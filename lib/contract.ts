@@ -88,7 +88,7 @@ export type AgentId =
   // --- Track 1: ALGORITHM HACKING (social / virality engine) ---
   | "trendscout" // live trend + topic scan (Exa → HN/Reddit fallback)
   | "composer" // multi-variant viral posts, scored by the virality model
-  | "reelmaker" // short vertical video (fal/LTX), MoneyPrinter-style script
+  | "reelmaker" // short vertical video (fal/LTX), hook-driven script
   | "calendar" // content calendar scheduling the generated posts
   // --- Track 2: SALES CYBORGS depth (prospect digital twin) ---
   | "twin" // simulates + scores each drafted email before send
@@ -588,7 +588,7 @@ export const ONBOARDING_STEP_MIN = 4; // floor on generated tour steps
 export const ONBOARDING_STEP_MAX = 7; // ceiling on generated tour steps
 
 // ----------------------------------------------------------------------------
-// AD FACTORY (QuickAds-style engine) — shared types for the scan/create/replicate
+// AD FACTORY engine — shared types for the scan/create/replicate
 // flows. adscout SCANS (→ `ads`), adsmith CREATES/REPLICATES (→ `adCreatives`).
 // These are the typed in-memory hand-offs; agents persist their own rows.
 // ----------------------------------------------------------------------------
@@ -598,7 +598,7 @@ export const ONBOARDING_STEP_MAX = 7; // ceiling on generated tour steps
 export type AdNetwork = "meta" | "tiktok" | "google";
 export type AdMediaType = "image" | "video" | "carousel" | "unknown";
 
-/** QuickAds-style 5-axis performance breakdown, 0-100 each. */
+/** 5-axis ad performance breakdown, 0-100 each. */
 export interface AdScores {
   hook: number;
   clarity: number;

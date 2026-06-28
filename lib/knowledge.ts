@@ -1,9 +1,9 @@
 // ============================================================================
 // INTERCEPT — KNOWLEDGE ENGINE (the compounding wiki loop), pure + graceful.
 // ----------------------------------------------------------------------------
-// A faithful port of applyagent's Wiki Knowledge Loop (Ingest → Query → Lint)
-// onto INTERCEPT's native Convex data model, keyed by GTM ENTITY instead of by
-// ATS portal. Every run's REAL outputs (intent threads, qualified prospects,
+// Our Wiki Knowledge Loop (Ingest → Query → Lint) on INTERCEPT's native Convex
+// data model, keyed by GTM ENTITY. Every run's REAL outputs (intent threads,
+// qualified prospects,
 // replied emails, winning competitor angles, top viral hooks, onboarding flows,
 // canonical positioning) become durable, dedup-able FACTS on the entity's page;
 // the NEXT run on that entity pulls those facts into its prompt before acting;

@@ -1,15 +1,14 @@
 "use client";
 
 /**
- * Mascot — INTERCEPT's reactive delight mascot. A faithful port of ACME's
- * "Acey" sprite (AceySprite.tsx), RECOLORED to INTERCEPT's Figma editorial
- * palette and REPURPOSED: here the mascot is pure delight that reacts to the
- * live swarm (see useMascotReactions.ts). Acme's guide/book/FAQ chat flow is
- * intentionally DROPPED — this is never a chat input, only a friendly face.
+ * Blip — INTERCEPT's reactive delight companion. A self-contained sprite,
+ * colored to INTERCEPT's Figma editorial palette: it is pure delight that
+ * reacts to the live swarm (see useBlipReactions.ts) and never takes chat
+ * input — only a friendly face.
  *
  * Pure CSS + inline SVG. No npm deps, no external image assets, no framer-motion.
  * One source of truth (`state`) drives a finite set of CSS keyframe animations,
- * mirroring the Codex-pet "row = state" model.
+ * using a simple "row = state" sprite-sheet model.
  *
  * Brand palette (INTERCEPT — soft indigo body + magenta accent + white):
  *   body indigo  #6b63c9  (soft periwinkle-indigo — the friendly body fill)
@@ -33,19 +32,19 @@
  *
  * Accessibility:
  *   - The sprite is purely decorative → aria-hidden + role="img".
- *   - prefers-reduced-motion: all keyframe motion is disabled and the mascot
+ *   - prefers-reduced-motion: all keyframe motion is disabled and the blip
  *     renders frozen on a calm, neutral idle pose.
  */
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 
 /**
- * The mascot's mood/animation states.
+ * The blip's mood/animation states.
  *   Core (looping): idle · thinking · talking
  *   One-shots (auto-return to idle via the caller's ONE_SHOT timer):
  *     wave · happy · peek · nod · celebrate · concerned
  *
- * In INTERCEPT these map onto the live swarm (useMascotReactions):
+ * In INTERCEPT these map onto the live swarm (useBlipReactions):
  *   thinking  — at least one run is running (the swarm is working).
  *   celebrate — a win: a run completed, an email got a reply, a hot lead /
  *               high-intent thread appeared, a post scored high, an ad generated.
@@ -53,7 +52,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
  *   peek/nod  — small ambient beats on minor signals (found / sent).
  *   idle      — at rest, eyes tracking the cursor via `gaze`.
  */
-export type MascotState =
+export type BlipState =
   | "idle"
   | "wave"
   | "thinking"
@@ -64,16 +63,16 @@ export type MascotState =
   | "celebrate"
   | "concerned";
 
-/** Small clamped eye/lean offset (px, in the 100×100 viewBox) so the mascot can
- *  look toward the cursor. Supplied by useMascotGaze; absent → static look-around. */
-export interface MascotGaze {
+/** Small clamped eye/lean offset (px, in the 100×100 viewBox) so the blip can
+ *  look toward the cursor. Supplied by useBlipGaze; absent → static look-around. */
+export interface BlipGaze {
   x: number;
   y: number;
 }
 
-interface MascotProps {
-  /** Animation state — the mascot's "mood". */
-  state?: MascotState;
+interface BlipProps {
+  /** Animation state — the blip's "mood". */
+  state?: BlipState;
   /** Rendered square size in pixels. */
   size?: number;
   /** Optional extra class names on the root. */
@@ -84,17 +83,16 @@ interface MascotProps {
    * overrides the idle look-around keyframe so the two never fight. Falls back
    * to the keyframe when null/zero (e.g. no cursor, reduced motion).
    */
-  gaze?: MascotGaze | null;
+  gaze?: BlipGaze | null;
   /**
    * Optional 0–1 "smarter" signal (the compounding brain's size). Brightens the
-   * antenna tip + adds a soft magenta halo so Acey visibly glows as it learns.
+   * antenna tip + adds a soft magenta halo so Blip visibly glows as it learns.
    * 0/undefined → no extra glow (the default reactive look). Decorative only.
    */
   glow?: number;
 }
 
 // Brand tokens kept local so the sprite is self-contained / portable.
-// (Acme hex → INTERCEPT hex mapping documented in WIRING.md.)
 const BODY = "#6b63c9"; // body fill — soft periwinkle-indigo (friendly on light + night)
 const BODY_LIGHT = "#8a82de"; // belly highlight · soft sheen (a lifted body tone)
 const BODY_LINE = "#5249a8"; // thin inner body outline (definition on a card)
@@ -103,7 +101,7 @@ const INDIGO = "#4a4392"; // antenna stalk · waving hand stroke (deeper accent)
 const MAGENTA = "#ff3d8b"; // accent ONLY — antenna tip · cheeks (+ tiny dots · spark)
 const WHITE = "#ffffff"; // face · eyes · mouth · gloss · sparkle · brows · hand
 
-export function Mascot({ state = "idle", size = 40, className, gaze = null, glow = 0 }: MascotProps) {
+export function Blip({ state = "idle", size = 40, className, gaze = null, glow = 0 }: BlipProps) {
   // Clamp the "smarter" glow once; drives the antenna halo opacity + tip radius.
   const g = Math.max(0, Math.min(1, glow));
   // A live gaze (cursor nearby) takes over from the idle look-around keyframe.
@@ -114,7 +112,7 @@ export function Mascot({ state = "idle", size = 40, className, gaze = null, glow
   // Body leans a fraction of the gaze (follow-through); face/pupils track fuller.
   const leanX = gx * 0.45;
 
-  // Randomized blink + idle-glance phase, chosen ONCE per mount so two mascot
+  // Randomized blink + idle-glance phase, chosen ONCE per mount so two blip
   // instances never blink in lockstep and the idle loop never visibly repeats on
   // the same cadence. Random `animation-delay` is the cheap, compositor-only way
   // to vary cadence without JS per-frame work. useMemo (not useState) → no
@@ -130,40 +128,40 @@ export function Mascot({ state = "idle", size = 40, className, gaze = null, glow
 
   return (
     <span
-      data-mascot-state={state}
-      data-mascot-tracking={tracking ? "1" : undefined}
-      className={["mascot-sprite", className].filter(Boolean).join(" ")}
+      data-blip-state={state}
+      data-blip-tracking={tracking ? "1" : undefined}
+      className={["blip-sprite", className].filter(Boolean).join(" ")}
       style={{
         width: size,
         height: size,
         // Consumed by the idle blink/glance/attract keyframes for varied cadence.
-        ["--mascot-blink-delay" as string]: `${phase.blink}s`,
-        ["--mascot-glance-delay" as string]: `${phase.glance}s`,
-        ["--mascot-attract-delay" as string]: `${phase.attract}s`,
+        ["--blip-blink-delay" as string]: `${phase.blink}s`,
+        ["--blip-glance-delay" as string]: `${phase.glance}s`,
+        ["--blip-attract-delay" as string]: `${phase.attract}s`,
       }}
       role="img"
       aria-hidden="true"
     >
       <StyleTag />
       <svg
-        className="mascot-svg"
+        className="blip-svg"
         viewBox="0 0 100 100"
         width={size}
         height={size}
         xmlns="http://www.w3.org/2000/svg"
       >
         {/* soft drop shadow under the pet (squashes on the happy hop) */}
-        <ellipse className="mascot-shadow" cx="50" cy="91" rx="22" ry="5" fill="rgba(15,20,40,0.18)" />
+        <ellipse className="blip-shadow" cx="50" cy="91" rx="22" ry="5" fill="rgba(15,20,40,0.18)" />
 
         {/* the whole body bobs/breathes as a unit; a tiny live lean toward the
             cursor rides on top of the keyframe via a wrapper translate */}
         <g
-          className="mascot-lean"
+          className="blip-lean"
           style={tracking ? { transform: `translateX(${leanX}px)` } : undefined}
         >
-          <g className="mascot-body">
+          <g className="blip-body">
             {/* rounded blob body — soft periwinkle-indigo. No neon rim: a quiet
-                drop-shadow (see .mascot-body in <StyleTag/>) grounds it on light,
+                drop-shadow (see .blip-body in <StyleTag/>) grounds it on light,
                 and the mid-tone fill lifts it off the night canvas on its own. */}
             <path
               d="M50 14
@@ -179,23 +177,23 @@ export function Mascot({ state = "idle", size = 40, className, gaze = null, glow
             {/* lighter belly highlight for soft, rounded depth */}
             <ellipse cx="50" cy="61" rx="26" ry="22" fill={BODY_LIGHT} opacity="0.55" />
             {/* glossy top highlight — gives a lively, rounded sheen */}
-            <ellipse className="mascot-gloss" cx="42" cy="30" rx="16" ry="9" fill={WHITE} opacity="0.16" />
+            <ellipse className="blip-gloss" cx="42" cy="30" rx="16" ry="9" fill={WHITE} opacity="0.16" />
 
             {/* little antenna with a glowing magenta tip (pulses while thinking).
                 A soft halo behind the tip brightens with the brain's size (`glow`)
-                so Acey visibly "gets smarter" — decorative, opacity-only. */}
+                so Blip visibly "gets smarter" — decorative, opacity-only. */}
             <line x1="50" y1="14" x2="50" y2="5" stroke={INDIGO} strokeWidth="3" strokeLinecap="round" />
             {g > 0.02 && (
               <circle
-                className="mascot-antenna-halo"
+                className="blip-antenna-halo"
                 cx="50"
                 cy="4"
-                r={6 + g * 4}
+                r={6 + g * 3}
                 fill={MAGENTA}
-                opacity={0.12 + g * 0.33}
+                opacity={0.05 + g * 0.1}
               />
             )}
-            <circle className="mascot-antenna" cx="50" cy="4" r={3.6 + g * 0.9} fill={MAGENTA} />
+            <circle className="blip-antenna" cx="50" cy="4" r={3.6 + g * 0.9} fill={MAGENTA} />
 
             {/* friendly cheeks (on-brand magenta) */}
             <circle cx="31" cy="59" r="4.5" fill={MAGENTA} opacity="0.5" />
@@ -204,19 +202,19 @@ export function Mascot({ state = "idle", size = 40, className, gaze = null, glow
             {/* face — looks around in idle, up while thinking, toward the cursor
                 when a live gaze is supplied */}
             <g
-              className="mascot-face"
+              className="blip-face"
               style={tracking ? { transform: `translate(${gx * 0.5}px, ${gy * 0.5}px)` } : undefined}
             >
               {/* eye whites */}
-              <ellipse className="mascot-eye" cx="38" cy="46" rx="8" ry="9" fill={WHITE} />
-              <ellipse className="mascot-eye" cx="62" cy="46" rx="8" ry="9" fill={WHITE} />
+              <ellipse className="blip-eye" cx="38" cy="46" rx="8" ry="9" fill={WHITE} />
+              <ellipse className="blip-eye" cx="62" cy="46" rx="8" ry="9" fill={WHITE} />
               {/* pupils — track the cursor a bit further than the face */}
               <g
-                className="mascot-pupils"
+                className="blip-pupils"
                 style={tracking ? { transform: `translate(${gx}px, ${gy}px)` } : undefined}
               >
-                <circle className="mascot-pupil" cx="39" cy="47" r="3.6" fill={NAVY_DEEP} />
-                <circle className="mascot-pupil" cx="63" cy="47" r="3.6" fill={NAVY_DEEP} />
+                <circle className="blip-pupil" cx="39" cy="47" r="3.6" fill={NAVY_DEEP} />
+                <circle className="blip-pupil" cx="63" cy="47" r="3.6" fill={NAVY_DEEP} />
                 {/* eye sparkle */}
                 <circle cx="40.7" cy="45" r="1.2" fill={WHITE} />
                 <circle cx="64.7" cy="45" r="1.2" fill={WHITE} />
@@ -225,7 +223,7 @@ export function Mascot({ state = "idle", size = 40, className, gaze = null, glow
 
             {/* mouth — animates open/closed when talking, smiles when happy */}
             <path
-              className="mascot-mouth"
+              className="blip-mouth"
               d="M42 64 Q50 70 58 64"
               fill="none"
               stroke={WHITE}
@@ -234,13 +232,13 @@ export function Mascot({ state = "idle", size = 40, className, gaze = null, glow
             />
 
             {/* waving hand/arm — only visible & animated in the wave state */}
-            <g className="mascot-arm" style={{ transformOrigin: "82px 60px" }}>
+            <g className="blip-arm" style={{ transformOrigin: "82px 60px" }}>
               <circle cx="86" cy="46" r="6" fill={WHITE} />
               <line x1="82" y1="58" x2="86" y2="48" stroke={INDIGO} strokeWidth="4" strokeLinecap="round" />
             </g>
 
             {/* thinking dots floating near the antenna */}
-            <g className="mascot-think-dots">
+            <g className="blip-think-dots">
               <circle cx="74" cy="22" r="2.2" fill={MAGENTA} />
               <circle cx="80" cy="16" r="2.8" fill={MAGENTA} />
               <circle cx="87" cy="9" r="3.4" fill={MAGENTA} />
@@ -248,16 +246,16 @@ export function Mascot({ state = "idle", size = 40, className, gaze = null, glow
 
             {/* concerned brows — small angled strokes above the eyes; only shown in
                 the `concerned` one-shot (soft worry, never alarmed). */}
-            <g className="mascot-brows">
+            <g className="blip-brows">
               <line x1="31" y1="36" x2="44" y2="39" stroke={WHITE} strokeWidth="2.4" strokeLinecap="round" />
               <line x1="69" y1="36" x2="56" y2="39" stroke={WHITE} strokeWidth="2.4" strokeLinecap="round" />
             </g>
 
             {/* celebrate sparkles — tiny stars that pop on a win beat. */}
-            <g className="mascot-sparkles">
-              <path className="mascot-spark" d="M22 24 l1.6 3.4 3.4 1.6 -3.4 1.6 -1.6 3.4 -1.6 -3.4 -3.4 -1.6 3.4 -1.6 Z" fill={WHITE} />
-              <path className="mascot-spark" d="M82 30 l1.3 2.8 2.8 1.3 -2.8 1.3 -1.3 2.8 -1.3 -2.8 -2.8 -1.3 2.8 -1.3 Z" fill={WHITE} />
-              <path className="mascot-spark" d="M70 14 l1 2.2 2.2 1 -2.2 1 -1 2.2 -1 -2.2 -2.2 -1 2.2 -1 Z" fill={MAGENTA} />
+            <g className="blip-sparkles">
+              <path className="blip-spark" d="M22 24 l1.6 3.4 3.4 1.6 -3.4 1.6 -1.6 3.4 -1.6 -3.4 -3.4 -1.6 3.4 -1.6 Z" fill={WHITE} />
+              <path className="blip-spark" d="M82 30 l1.3 2.8 2.8 1.3 -2.8 1.3 -1.3 2.8 -1.3 -2.8 -2.8 -1.3 2.8 -1.3 Z" fill={WHITE} />
+              <path className="blip-spark" d="M70 14 l1 2.2 2.2 1 -2.2 1 -1 2.2 -1 -2.2 -2.2 -1 2.2 -1 Z" fill={MAGENTA} />
             </g>
           </g>
         </g>
@@ -269,118 +267,131 @@ export function Mascot({ state = "idle", size = 40, className, gaze = null, glow
 /**
  * Scoped keyframes + per-state rules. Injected inline so the sprite ships as one
  * self-contained file (no Tailwind / global CSS dependency). Selectors are
- * namespaced under `.mascot-sprite[data-mascot-state="…"]`.
+ * namespaced under `.blip-sprite[data-blip-state="…"]`.
  */
 function StyleTag() {
   return (
     <style>{`
-.mascot-sprite { display: inline-block; line-height: 0; }
-.mascot-svg { overflow: visible; display: block; }
+.blip-sprite { display: inline-block; line-height: 0; }
+.blip-svg { overflow: visible; display: block; }
 
 /* soft, subtle drop-shadow under the whole pet — replaces the old neon magenta
    rim glow. Quiet depth that grounds the body on the light editorial canvas
    without reading harsh, and stays gentle on the night canvas. */
-.mascot-body { filter: drop-shadow(0 2px 3px rgba(31, 29, 61, 0.22)); }
+.blip-body { filter: drop-shadow(0 2px 3px rgba(31, 29, 61, 0.22)); }
 
 /* smarter-glow halo behind the antenna tip — soft blur so it reads as a glow,
-   not a flat disc. Pulses with the antenna while idle/thinking. */
-.mascot-antenna-halo { filter: blur(1.6px); transform-box: fill-box; transform-origin: center; }
-.mascot-sprite[data-mascot-state="idle"] .mascot-antenna-halo { animation: mascot-antenna-pulse 4s ease-in-out infinite; }
-.mascot-sprite[data-mascot-state="thinking"] .mascot-antenna-halo { animation: mascot-antenna-pulse 1.1s ease-in-out infinite; }
+   not a flat disc. At rest it is CALM: a barely-there, very slow opacity breathe
+   only (no scale → it never reads as a shrinking/growing circle). A single faint
+   one-shot bloom fires the instant a celebrate beat lands, then it's gone. */
+.blip-antenna-halo { filter: blur(1.6px); transform-box: fill-box; transform-origin: center; }
+.blip-sprite[data-blip-state="idle"] .blip-antenna-halo { animation: blip-antenna-breathe 7s ease-in-out infinite; }
+.blip-sprite[data-blip-state="celebrate"] .blip-antenna-halo { animation: blip-halo-pop 0.9s ease-out; }
 
 /* hidden-by-default sub-parts */
-.mascot-arm { opacity: 0; }
-.mascot-think-dots { opacity: 0; }
-.mascot-brows { opacity: 0; }
-.mascot-sparkles { opacity: 0; }
+.blip-arm { opacity: 0; }
+.blip-think-dots { opacity: 0; }
+.blip-brows { opacity: 0; }
+.blip-sparkles { opacity: 0; }
 
 /* live cursor-gaze: ease the inline transforms so eyes glide, and stop the
    idle look-around/look-up keyframes from fighting the live tracking. */
-.mascot-lean, .mascot-face, .mascot-pupils { transition: transform 160ms ease-out; }
-.mascot-sprite[data-mascot-tracking="1"] .mascot-pupils { animation: none !important; }
-.mascot-sprite[data-mascot-tracking="1"][data-mascot-state="idle"] .mascot-face,
-.mascot-sprite[data-mascot-tracking="1"][data-mascot-state="thinking"] .mascot-face { animation: none !important; }
+.blip-lean, .blip-face, .blip-pupils { transition: transform 160ms ease-out; }
+.blip-sprite[data-blip-tracking="1"] .blip-pupils { animation: none !important; }
+.blip-sprite[data-blip-tracking="1"][data-blip-state="idle"] .blip-face,
+.blip-sprite[data-blip-tracking="1"][data-blip-state="thinking"] .blip-face { animation: none !important; }
 
 /* ---------- keyframes ---------- */
-@keyframes mascot-breathe {
+@keyframes blip-breathe {
   0%, 100% { transform: translateY(0) scale(1); }
   50%      { transform: translateY(-2px) scale(1.02); }
 }
-@keyframes mascot-blink {
+@keyframes blip-blink {
   0%, 92%, 100% { transform: scaleY(1); }
   95%, 97%      { transform: scaleY(0.08); }
 }
 /* idle eyes glance around periodically to attract attention */
-@keyframes mascot-look-around {
+@keyframes blip-look-around {
   0%, 58%, 100% { transform: translateX(0); }
   64%, 72%      { transform: translateX(2.4px); }
   80%, 88%      { transform: translateX(-2.4px); }
 }
 /* idle "attract" — a gentle periodic tilt+lean so the pet feels alive and
    occasionally nods to draw the eye, without ever leaving idle. */
-@keyframes mascot-attract {
+@keyframes blip-attract {
   0%, 78%, 100% { transform: translateY(0) rotate(0deg); }
   84%           { transform: translateY(-3px) rotate(-5deg); }
   90%           { transform: translateY(0) rotate(4deg); }
   95%           { transform: translateY(-1px) rotate(-2deg); }
 }
-@keyframes mascot-look-up {
+@keyframes blip-look-up {
   0%, 100% { transform: translateY(0); }
   50%      { transform: translateY(-2.5px); }
 }
-@keyframes mascot-antenna-pulse {
+@keyframes blip-antenna-pulse {
   0%, 100% { transform: scale(1); opacity: 0.9; }
   50%      { transform: scale(1.5); opacity: 1; }
 }
-@keyframes mascot-think-float {
+/* at-rest halo: barely-there, very slow opacity breathe — no scale at all. */
+@keyframes blip-antenna-breathe {
+  0%, 100% { opacity: 0.05; }
+  50%      { opacity: 0.09; }
+}
+/* celebrate halo: a single faint one-shot bloom, then gone. */
+@keyframes blip-halo-pop {
+  0%   { opacity: 0;    transform: scale(0.85); }
+  30%  { opacity: 0.45; transform: scale(1.15); }
+  100% { opacity: 0;    transform: scale(1.3); }
+}
+@keyframes blip-think-float {
   0%   { opacity: 0; transform: translateY(4px) scale(0.6); }
   40%  { opacity: 1; }
   100% { opacity: 0; transform: translateY(-6px) scale(1); }
 }
-@keyframes mascot-talk {
+@keyframes blip-talk {
   0%, 100% { transform: translateY(0) scaleY(1); }
   50%      { transform: translateY(0.5px) scaleY(1.08); }
 }
-@keyframes mascot-mouth-talk {
+@keyframes blip-mouth-talk {
   0%, 100% { d: path("M42 64 Q50 70 58 64"); }
   50%      { d: path("M42 64 Q50 76 58 64"); }
 }
-@keyframes mascot-hop {
+@keyframes blip-hop {
   0%, 100% { transform: translateY(0); }
   30%      { transform: translateY(-9px); }
   55%      { transform: translateY(0); }
   70%      { transform: translateY(-3px); }
 }
-@keyframes mascot-hop-shadow {
+@keyframes blip-hop-shadow {
   0%, 100% { transform: scaleX(1); opacity: 0.18; }
   30%      { transform: scaleX(0.7); opacity: 0.1; }
 }
 /* wave: anticipation (small dip back) before the raise, then follow-through. */
-@keyframes mascot-wave-hand {
+@keyframes blip-wave-hand {
   0%, 100% { transform: rotate(0deg); }
   10%      { transform: rotate(8deg); }   /* anticipation: wind up */
   35%      { transform: rotate(-24deg); }
   60%      { transform: rotate(20deg); }
   80%      { transform: rotate(-10deg); } /* follow-through overshoot */
 }
-@keyframes mascot-wave-body {
+@keyframes blip-wave-body {
   0%, 100% { transform: rotate(0deg); }
   50%      { transform: rotate(-4deg); }
 }
 /* peek: a quick glance + small lean (minor signal). transform-only. */
-@keyframes mascot-peek {
+@keyframes blip-peek {
   0%, 100% { transform: translate(0, 0) rotate(0deg); }
   35%      { transform: translate(-3px, -2px) rotate(-6deg); }
   70%      { transform: translate(-2px, 0) rotate(-3deg); }
 }
 /* nod: quick affirmative dip (step complete / sent). */
-@keyframes mascot-nod {
+@keyframes blip-nod {
   0%, 100% { transform: translateY(0) rotate(0deg); }
   30%      { transform: translateY(2px) rotate(3deg); }
   60%      { transform: translateY(-1px) rotate(-1deg); }
 }
 /* celebrate: a bigger hop with a small secondary bounce on land. */
-@keyframes mascot-celebrate {
+@keyframes blip-celebrate {
   0%      { transform: translateY(0) scale(1); }
   25%     { transform: translateY(-12px) scale(1.04); }
   45%     { transform: translateY(0) scaleY(0.92); }   /* squash on land */
@@ -388,13 +399,13 @@ function StyleTag() {
   80%     { transform: translateY(0) scaleY(0.98); }
   100%    { transform: translateY(0) scale(1); }
 }
-@keyframes mascot-spark-pop {
+@keyframes blip-spark-pop {
   0%   { opacity: 0; transform: scale(0.2) rotate(0deg); }
   40%  { opacity: 1; transform: scale(1.1) rotate(25deg); }
   100% { opacity: 0; transform: scale(0.6) rotate(60deg); }
 }
 /* concerned: a soft, slow side-tilt — worried, not alarmed. */
-@keyframes mascot-concerned {
+@keyframes blip-concerned {
   0%, 100% { transform: rotate(0deg); }
   30%      { transform: rotate(-4deg); }
   70%      { transform: rotate(3deg); }
@@ -404,78 +415,79 @@ function StyleTag() {
    Random per-mount animation-delay (CSS custom props set on the root) de-syncs the
    blink/glance/attract loops so the idle never visibly metronomes or repeats. The
    delays default to 0 when the props are absent (e.g. SSR), so this degrades safely. */
-.mascot-sprite[data-mascot-state="idle"] .mascot-body  { animation: mascot-breathe 3.4s ease-in-out infinite, mascot-attract 9s ease-in-out infinite; animation-delay: 0s, var(--mascot-attract-delay, 0s); transform-origin: 50px 80px; }
-.mascot-sprite[data-mascot-state="idle"] .mascot-eye   { animation: mascot-blink 5.5s ease-in-out infinite; animation-delay: var(--mascot-blink-delay, 0s); transform-origin: center; transform-box: fill-box; }
-.mascot-sprite[data-mascot-state="idle"] .mascot-pupils { animation: mascot-look-around 8s ease-in-out infinite; animation-delay: var(--mascot-glance-delay, 0s); }
-.mascot-sprite[data-mascot-state="idle"] .mascot-antenna { animation: mascot-antenna-pulse 4s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+.blip-sprite[data-blip-state="idle"] .blip-body  { animation: blip-breathe 3.4s ease-in-out infinite, blip-attract 9s ease-in-out infinite; animation-delay: 0s, var(--blip-attract-delay, 0s); transform-origin: 50px 80px; }
+.blip-sprite[data-blip-state="idle"] .blip-eye   { animation: blip-blink 5.5s ease-in-out infinite; animation-delay: var(--blip-blink-delay, 0s); transform-origin: center; transform-box: fill-box; }
+.blip-sprite[data-blip-state="idle"] .blip-pupils { animation: blip-look-around 8s ease-in-out infinite; animation-delay: var(--blip-glance-delay, 0s); }
+/* idle antenna tip stays calm + static (no throbbing); it only pulses while
+   the swarm is actively thinking (see the thinking block below). */
 
 /* ---------- thinking ---------- */
-.mascot-sprite[data-mascot-state="thinking"] .mascot-body { animation: mascot-breathe 2.4s ease-in-out infinite; transform-origin: 50px 80px; }
-.mascot-sprite[data-mascot-state="thinking"] .mascot-face { animation: mascot-look-up 2.4s ease-in-out infinite; }
-.mascot-sprite[data-mascot-state="thinking"] .mascot-antenna { animation: mascot-antenna-pulse 1.1s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
-.mascot-sprite[data-mascot-state="thinking"] .mascot-think-dots { opacity: 1; }
-.mascot-sprite[data-mascot-state="thinking"] .mascot-think-dots circle { animation: mascot-think-float 1.5s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
-.mascot-sprite[data-mascot-state="thinking"] .mascot-think-dots circle:nth-child(2) { animation-delay: 0.25s; }
-.mascot-sprite[data-mascot-state="thinking"] .mascot-think-dots circle:nth-child(3) { animation-delay: 0.5s; }
+.blip-sprite[data-blip-state="thinking"] .blip-body { animation: blip-breathe 2.4s ease-in-out infinite; transform-origin: 50px 80px; }
+.blip-sprite[data-blip-state="thinking"] .blip-face { animation: blip-look-up 2.4s ease-in-out infinite; }
+.blip-sprite[data-blip-state="thinking"] .blip-antenna { animation: blip-antenna-pulse 1.1s ease-in-out infinite; transform-origin: center; transform-box: fill-box; }
+.blip-sprite[data-blip-state="thinking"] .blip-think-dots { opacity: 1; }
+.blip-sprite[data-blip-state="thinking"] .blip-think-dots circle { animation: blip-think-float 1.5s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.blip-sprite[data-blip-state="thinking"] .blip-think-dots circle:nth-child(2) { animation-delay: 0.25s; }
+.blip-sprite[data-blip-state="thinking"] .blip-think-dots circle:nth-child(3) { animation-delay: 0.5s; }
 
 /* ---------- talking ---------- */
-.mascot-sprite[data-mascot-state="talking"] .mascot-body  { animation: mascot-talk 0.45s ease-in-out infinite; transform-origin: 50px 80px; }
-.mascot-sprite[data-mascot-state="talking"] .mascot-mouth { animation: mascot-mouth-talk 0.4s ease-in-out infinite; }
+.blip-sprite[data-blip-state="talking"] .blip-body  { animation: blip-talk 0.45s ease-in-out infinite; transform-origin: 50px 80px; }
+.blip-sprite[data-blip-state="talking"] .blip-mouth { animation: blip-mouth-talk 0.4s ease-in-out infinite; }
 
 /* ---------- happy ---------- */
-.mascot-sprite[data-mascot-state="happy"] .mascot-body   { animation: mascot-hop 0.9s ease-in-out infinite; transform-origin: 50px 80px; }
-.mascot-sprite[data-mascot-state="happy"] .mascot-shadow { animation: mascot-hop-shadow 0.9s ease-in-out infinite; transform-origin: 50px 90px; }
-.mascot-sprite[data-mascot-state="happy"] .mascot-mouth  { d: path("M40 63 Q50 74 60 63"); }
+.blip-sprite[data-blip-state="happy"] .blip-body   { animation: blip-hop 0.9s ease-in-out infinite; transform-origin: 50px 80px; }
+.blip-sprite[data-blip-state="happy"] .blip-shadow { animation: blip-hop-shadow 0.9s ease-in-out infinite; transform-origin: 50px 90px; }
+.blip-sprite[data-blip-state="happy"] .blip-mouth  { d: path("M40 63 Q50 74 60 63"); }
 
 /* ---------- wave ---------- */
-.mascot-sprite[data-mascot-state="wave"] .mascot-body { animation: mascot-wave-body 1s ease-in-out infinite; transform-origin: 50px 80px; }
-.mascot-sprite[data-mascot-state="wave"] .mascot-arm  { opacity: 1; animation: mascot-wave-hand 0.6s ease-in-out infinite; }
+.blip-sprite[data-blip-state="wave"] .blip-body { animation: blip-wave-body 1s ease-in-out infinite; transform-origin: 50px 80px; }
+.blip-sprite[data-blip-state="wave"] .blip-arm  { opacity: 1; animation: blip-wave-hand 0.6s ease-in-out infinite; }
 
 /* ---------- peek (one-shot) ---------- */
-.mascot-sprite[data-mascot-state="peek"] .mascot-body { animation: mascot-peek 0.5s ease-in-out; transform-origin: 50px 80px; }
+.blip-sprite[data-blip-state="peek"] .blip-body { animation: blip-peek 0.5s ease-in-out; transform-origin: 50px 80px; }
 
 /* ---------- nod (one-shot) ---------- */
-.mascot-sprite[data-mascot-state="nod"] .mascot-body  { animation: mascot-nod 0.45s ease-in-out; transform-origin: 50px 80px; }
-.mascot-sprite[data-mascot-state="nod"] .mascot-mouth { d: path("M40 63 Q50 72 60 63"); }
+.blip-sprite[data-blip-state="nod"] .blip-body  { animation: blip-nod 0.45s ease-in-out; transform-origin: 50px 80px; }
+.blip-sprite[data-blip-state="nod"] .blip-mouth { d: path("M40 63 Q50 72 60 63"); }
 
 /* ---------- celebrate (one-shot success beat) ---------- */
-.mascot-sprite[data-mascot-state="celebrate"] .mascot-body     { animation: mascot-celebrate 0.9s ease-in-out; transform-origin: 50px 88px; }
-.mascot-sprite[data-mascot-state="celebrate"] .mascot-shadow   { animation: mascot-hop-shadow 0.9s ease-in-out; transform-origin: 50px 90px; }
-.mascot-sprite[data-mascot-state="celebrate"] .mascot-mouth    { d: path("M40 63 Q50 75 60 63"); }
-.mascot-sprite[data-mascot-state="celebrate"] .mascot-sparkles { opacity: 1; }
-.mascot-sprite[data-mascot-state="celebrate"] .mascot-spark    { animation: mascot-spark-pop 0.9s ease-out; transform-box: fill-box; transform-origin: center; }
-.mascot-sprite[data-mascot-state="celebrate"] .mascot-spark:nth-child(2) { animation-delay: 0.15s; }
-.mascot-sprite[data-mascot-state="celebrate"] .mascot-spark:nth-child(3) { animation-delay: 0.3s; }
+.blip-sprite[data-blip-state="celebrate"] .blip-body     { animation: blip-celebrate 0.9s ease-in-out; transform-origin: 50px 88px; }
+.blip-sprite[data-blip-state="celebrate"] .blip-shadow   { animation: blip-hop-shadow 0.9s ease-in-out; transform-origin: 50px 90px; }
+.blip-sprite[data-blip-state="celebrate"] .blip-mouth    { d: path("M40 63 Q50 75 60 63"); }
+.blip-sprite[data-blip-state="celebrate"] .blip-sparkles { opacity: 1; }
+.blip-sprite[data-blip-state="celebrate"] .blip-spark    { animation: blip-spark-pop 0.9s ease-out; transform-box: fill-box; transform-origin: center; }
+.blip-sprite[data-blip-state="celebrate"] .blip-spark:nth-child(2) { animation-delay: 0.15s; }
+.blip-sprite[data-blip-state="celebrate"] .blip-spark:nth-child(3) { animation-delay: 0.3s; }
 
 /* ---------- concerned (one-shot, soft worry) ---------- */
-.mascot-sprite[data-mascot-state="concerned"] .mascot-body  { animation: mascot-concerned 1s ease-in-out; transform-origin: 50px 80px; }
-.mascot-sprite[data-mascot-state="concerned"] .mascot-brows { opacity: 1; }
-.mascot-sprite[data-mascot-state="concerned"] .mascot-mouth { d: path("M42 67 Q50 62 58 67"); }
+.blip-sprite[data-blip-state="concerned"] .blip-body  { animation: blip-concerned 1s ease-in-out; transform-origin: 50px 80px; }
+.blip-sprite[data-blip-state="concerned"] .blip-brows { opacity: 1; }
+.blip-sprite[data-blip-state="concerned"] .blip-mouth { d: path("M42 67 Q50 62 58 67"); }
 
 /* ---------- reduced motion: freeze on a calm idle pose ---------- */
 @media (prefers-reduced-motion: reduce) {
-  .mascot-sprite * { animation: none !important; }
-  .mascot-lean, .mascot-face, .mascot-pupils { transition: none !important; }
-  .mascot-sprite .mascot-arm,
-  .mascot-sprite .mascot-think-dots,
-  .mascot-sprite .mascot-brows,
-  .mascot-sprite .mascot-sparkles { opacity: 0 !important; }
+  .blip-sprite * { animation: none !important; }
+  .blip-lean, .blip-face, .blip-pupils { transition: none !important; }
+  .blip-sprite .blip-arm,
+  .blip-sprite .blip-think-dots,
+  .blip-sprite .blip-brows,
+  .blip-sprite .blip-sparkles { opacity: 0 !important; }
 }
     `}</style>
   );
 }
 
 // ---------------------------------------------------------------------------
-// useMascotGaze — a tiny, self-contained cursor-gaze hook (NO framer-motion).
-// Ports the *eyes-track-the-cursor* essence of Acme's useAceyMotion without the
-// heavy spring locomotion. The whole mascot stays parked in its corner; only the
-// pupils/face glance toward the pointer. Returns a clamped { x, y } offset (in
-// the 100×100 viewBox units the sprite expects), or null at rest / under
-// reduced motion. Pass the result straight into <Mascot gaze={...} />.
+// useBlipGaze — a tiny, self-contained cursor-gaze hook (NO framer-motion).
+// The eyes track the cursor without any heavy spring locomotion: the whole
+// blip stays parked in its corner; only the pupils/face glance toward the
+// pointer. Returns a clamped { x, y } offset (in the 100×100 viewBox units the
+// sprite expects), or null at rest / under reduced motion. Pass the result
+// straight into <Blip gaze={...} />.
 // ---------------------------------------------------------------------------
 
 /** Max pupil/face gaze offset (viewBox px) — small + clamped so it never looks
- *  cross-eyed. Mirrors useAceyMotion.GAZE_MAX. */
+ *  cross-eyed. */
 const GAZE_MAX = 3.2;
 /** Beyond this distance (px) the cursor is "far"; gaze reaches its cap. */
 const GAZE_REACH_PX = 240;
@@ -487,10 +499,10 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function useMascotGaze<T extends HTMLElement>(
+export function useBlipGaze<T extends HTMLElement>(
   ref: RefObject<T | null>,
-): MascotGaze | null {
-  const [gaze, setGaze] = useState<MascotGaze | null>(null);
+): BlipGaze | null {
+  const [gaze, setGaze] = useState<BlipGaze | null>(null);
   const last = useRef<{ x: number; y: number }>({ x: 999, y: 999 });
   const queued = useRef(false);
 
@@ -544,4 +556,4 @@ function clamp(v: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, v));
 }
 
-export default Mascot;
+export default Blip;

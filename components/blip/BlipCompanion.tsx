@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * MascotCompanion — the fixed, floating corner companion ("Acey"). Mount this
+ * BlipCompanion — the fixed, floating corner companion ("Blip"). Mount this
  * ONCE (app/page.tsx). It now runs TWO layers:
  *
- *   • REACTIVE (useMascotReactions) — mood + ambient one-liners off the live swarm
+ *   • REACTIVE (useBlipReactions) — mood + ambient one-liners off the live swarm
  *     (thinking / celebrate / concerned / peek / nod). Pure delight.
- *   • INTELLIGENT (useMascotIntel) — the DEEPENED companion:
+ *   • INTELLIGENT (useBlipIntel) — the DEEPENED companion:
  *       1. PROACTIVE WINS  — surfaces the 24/7 cron's overnight `proactive`
  *          messages as a clickable bubble ("found 3 hot leads overnight 👀")
  *          that focuses the run that produced them.
@@ -14,9 +14,9 @@
  *          brightens as the compounding brain grows; clicking the badge opens
  *          the Brain canvas/lens.
  *       3. NEXT-ACTION     — after a win, ONE clickable suggestion ("draft
- *          outreach to Acme?") that triggers a REAL run via createRun (NOT a
+ *          outreach to Northwind?") that triggers a REAL run via createRun (NOT a
  *          chat input).
- *       4. GLANCEABLE STATUS — clicking Acey opens a tiny popover ("Working on
+ *       4. GLANCEABLE STATUS — clicking Blip opens a tiny popover ("Working on
  *          <co> · Found <n> · Knows <n> facts") with links + an empty-state greet.
  *
  * GRACEFUL: every new signal is optional — a missing query / empty brain / fresh
@@ -29,16 +29,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/convex/_generated/api";
-import { Mascot, useMascotGaze } from "./Mascot";
-import { useMascotReactions } from "./useMascotReactions";
-import { useMascotIntel } from "./useMascotIntel";
-import MascotPopover from "./MascotPopover";
+import { Blip, useBlipGaze } from "./Blip";
+import { useBlipReactions } from "./useBlipReactions";
+import { useBlipIntel } from "./useBlipIntel";
+import BlipPopover from "./BlipPopover";
 import type { Id } from "@/convex/_generated/dataModel";
 
 /** How long the next-action nudge bubble lingers after a win (ms). */
 const NUDGE_MS = 7000;
 
-interface MascotCompanionProps {
+interface BlipCompanionProps {
   /** The focused run — enables richer per-run wins (threads/emails/posts/ads). */
   runId?: Id<"runs"> | null;
   /** The active conversation — enables event-feed ambient one-liners. */
@@ -51,21 +51,21 @@ interface MascotCompanionProps {
   onOpenBrain?: () => void;
 }
 
-export default function MascotCompanion({
+export default function BlipCompanion({
   runId = null,
   conversationId = null,
   size = 64,
   onFocusRun,
   onOpenBrain,
-}: MascotCompanionProps) {
+}: BlipCompanionProps) {
   const spriteRef = useRef<HTMLButtonElement>(null);
-  const gaze = useMascotGaze(spriteRef);
-  const { state, speech, dismissSpeech, busy } = useMascotReactions({
+  const gaze = useBlipGaze(spriteRef);
+  const { state, speech, dismissSpeech, busy } = useBlipReactions({
     runId,
     conversationId,
   });
   const { proactiveWin, dismissProactive, brain, status, nextAction } =
-    useMascotIntel({ runId, conversationId });
+    useBlipIntel({ runId, conversationId });
 
   const createRun = useMutation(api.runs.createRun);
 
@@ -90,7 +90,7 @@ export default function MascotCompanion({
   );
 
   // Fire a next-action: spawn a REAL run via createRun, then focus it. Defensive —
-  // any failure is swallowed so the mascot never breaks the page.
+  // any failure is swallowed so the blip never breaks the page.
   const act = useCallback(async () => {
     if (!nextAction) return;
     setNudgeVisible(false);
@@ -132,7 +132,7 @@ export default function MascotCompanion({
     >
       {/* ---- Bubble stack (one at a time, by priority) ---- */}
       {popoverOpen ? (
-        <MascotPopover
+        <BlipPopover
           status={status}
           brain={brain}
           nextAction={nextAction}
@@ -198,12 +198,12 @@ export default function MascotCompanion({
           ref={spriteRef}
           onClick={() => setPopoverOpen((v) => !v)}
           aria-label={
-            busy ? "Acey — the swarm is working" : "Acey — open status"
+            busy ? "Blip — the swarm is working" : "Blip — open status"
           }
           className="grid size-20 place-items-center rounded-full ring-2 ring-transparent outline-none transition-[transform,box-shadow] hover:ring-accent-magenta/25 focus-visible:ring-accent-magenta/40"
           style={{ filter: "drop-shadow(0 6px 14px rgba(15,20,40,0.28))" }}
         >
-          <Mascot state={state} size={size} gaze={gaze} glow={brain.glow} />
+          <Blip state={state} size={size} gaze={gaze} glow={brain.glow} />
         </button>
 
         {/* GETS-SMARTER badge — clicking opens the brain. */}

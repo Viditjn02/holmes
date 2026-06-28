@@ -1,10 +1,9 @@
 // ============================================================================
-// INTERCEPT — PLUS · OSS FREE EMAIL FINDER (Fiber fallback).
+// INTERCEPT — FREE EMAIL FINDER (Fiber fallback).
 //
-// Email discovery/verification algorithm ported from email-sleuth (MIT),
-// © buyukakyuz — github.com/buyukakyuz/email-sleuth. Pattern generation
-// (`src/utils/patterns.rs`), confidence scoring + generic-prefix set
-// (`src/core/sleuth.rs`, `config/mod.rs`) ported to TypeScript.
+// Name + domain → pattern generation → MX check → confidence score. A $0,
+// dependency-free email-discovery loop. (Third-party attribution for the
+// underlying algorithm lives in THIRD_PARTY_NOTICES.md.)
 //
 // SPONSOR-FIRST preserved: Fiber stays PRIMARY for VERIFIED emails; this is the
 // $0 fallback so outbound still produces a (clearly-unverified) address when
@@ -24,12 +23,12 @@ export interface EmailGuess {
   confidence: number; // 0-1, normalized from the integer score below
 }
 
-// Validity regex from email-sleuth `config/mod.rs:109`.
+// Standard email validity regex.
 const EMAIL_REGEX =
   /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/;
 
-// Generic / role-account prefixes — ported verbatim from email-sleuth
-// `config/mod.rs:68-102`. A local-part in this set is a role inbox, not a
+// Generic / role-account prefixes.
+// A local-part in this set is a role inbox, not a
 // person, and is penalized hard (-3) by the scorer.
 const GENERIC_PREFIXES: ReadonlySet<string> = new Set([
   "info",
@@ -99,7 +98,7 @@ const GENERIC_PREFIXES: ReadonlySet<string> = new Set([
 ]);
 
 // ----------------------------------------------------------------------------
-// Scoring constants — email-sleuth `config/mod.rs:131-132` + `sleuth.rs`.
+// Scoring constants.
 // Accept a personal guess at >= 4; role accounts need >= 7 (only an SMTP boost
 // can clear that bar — i.e. we never trust a role inbox without a live probe).
 // ----------------------------------------------------------------------------
@@ -112,7 +111,7 @@ export const MIN_ROLE_ACCEPT_SCORE = 7;
 const SCORE_CEILING = 11;
 
 // ----------------------------------------------------------------------------
-// Name handling — `sanitize_name_part` (patterns.rs:9-16): strip diacritics,
+// Name handling: strip diacritics,
 // lowercase, keep [a-z0-9] only.
 // ----------------------------------------------------------------------------
 function sanitizeNamePart(part: string): string {
@@ -150,7 +149,7 @@ function normalizeDomain(domain: string): string {
 }
 
 // ----------------------------------------------------------------------------
-// Pattern generation — `generate_email_patterns` (patterns.rs:22-122). Each
+// Pattern generation. Each
 // candidate carries a prior in (0,1] reflecting how common the layout is at
 // corporate domains; the prior orders ties between equally-scored candidates.
 // ----------------------------------------------------------------------------
@@ -196,8 +195,7 @@ function buildCandidates(parts: NameParts): Candidate[] {
 }
 
 // ----------------------------------------------------------------------------
-// Confidence scoring — `calculate_initial_confidence` (sleuth.rs:813-833),
-// `is_generic_prefix` (912), `check_name_in_email` (899).
+// Confidence scoring.
 //
 //   base 1
 //   +1 MX exists      (mx === false → HARD 0: domain can't receive mail)
@@ -225,7 +223,7 @@ function scoreCandidate(
   parts: NameParts,
   mx: boolean | null,
 ): number {
-  // MX absent → the domain cannot receive mail. Hard zero (email-sleuth gate).
+  // MX absent → the domain cannot receive mail. Hard zero.
   if (mx === false) return 0;
 
   let score = 1; // base
@@ -298,9 +296,8 @@ export function guessEmails(name: string, domain: string): EmailGuess[] {
 
 // ----------------------------------------------------------------------------
 // DNS MX resolution via DNS-over-HTTPS (fetch only — NO node `dns`, so this
-// module stays deploy-safe in the default Convex runtime). Mirrors email-sleuth
-// `resolve_mail_server` (dns.rs:78-155) with the `resolve_a_record_fallback`
-// (158-214): an A record means mail can still be delivered to the host.
+// module stays deploy-safe in the default Convex runtime). MX lookup with an
+// A-record fallback: an A record means mail can still be delivered to the host.
 //
 // Returns: true (can receive) | false (cannot) | null (unknown — DoH failed;
 // callers must NOT hard-zero on null).
@@ -391,7 +388,7 @@ export async function guessEmailWithMx(
 // tiny worker exposing `POST /verify {email} → SmtpVerdict`; call it from a
 // Convex action and feed the result into `applySmtpVerdict` to finalize score.
 //
-// Boosts — email-sleuth `evaluate_smtp_response` / `perform_catch_all_check`:
+// Boosts:
 //   +7  exists && !catchAll   (a real, deliverable mailbox)
 //   +1  exists && catchAll    (accepted, but domain accepts everything)
 //   -10 rejected              (5xx + a rejection phrase → dead mailbox)

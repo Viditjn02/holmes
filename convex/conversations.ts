@@ -84,13 +84,13 @@ export const getMessages = query({
 
 /**
  * Recent PROACTIVE assistant messages across ALL conversations — the 24/7 cron's
- * overnight wins ("overnight I found 3 hot leads…"). Powers Acey's proactive-win
+ * overnight wins ("overnight I found 3 hot leads…"). Powers Blip's proactive-win
  * bubble. Bounded, read-only, newest-first; returns [] for a fresh deployment so
- * the mascot simply shows no bubble. Never throws.
+ * the blip simply shows no bubble. Never throws.
  *
  * Bounded scan: pulls the newest ~200 messages off the default creation-time
  * index and filters to `proactive`, so it stays cheap even with no dedicated
- * index. The mascot only needs the latest handful.
+ * index. The blip only needs the latest handful.
  */
 export const recentProactive = query({
   args: { limit: v.optional(v.number()) },

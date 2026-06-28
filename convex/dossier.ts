@@ -45,10 +45,19 @@ export interface DossierAd {
   url: string;
 }
 
+/** Lightweight "what they're building + strengths/gaps" read for a competitor. */
+export interface DossierCompetitorAnalysis {
+  whatTheyreBuilding: string;
+  pros: string[];
+  cons: string[];
+}
+
 export interface DossierCompetitor {
   advertiser: string;
   adCount: number;
   topAd: DossierAd;
+  /** Per-competitor analysis (Supadata homepage scrape + OpenAI). Null when absent. */
+  analysis: DossierCompetitorAnalysis | null;
 }
 
 export interface DossierDecisionMaker {
@@ -147,6 +156,17 @@ function toDossierAd(ad: Doc<"ads">): DossierAd {
     imageUrl: ad.thumbnailUrl ?? ad.imageUrl ?? null,
     url: ad.url,
   };
+}
+
+/** Pull the (optional) per-competitor analysis off an ad row; null when empty. */
+function toCompetitorAnalysis(ad: Doc<"ads">): DossierCompetitorAnalysis | null {
+  const raw = ad.competitorAnalysis;
+  if (!raw) return null;
+  const whatTheyreBuilding = (raw.whatTheyreBuilding ?? "").trim();
+  const pros = (raw.pros ?? []).filter((s) => s.trim().length > 0);
+  const cons = (raw.cons ?? []).filter((s) => s.trim().length > 0);
+  if (!whatTheyreBuilding && pros.length === 0 && cons.length === 0) return null;
+  return { whatTheyreBuilding, pros, cons };
 }
 
 function truncate(s: string, max: number): string {
@@ -279,6 +299,7 @@ async function buildDossier(ctx: QueryCtx, run: Doc<"runs">): Promise<Dossier> {
       advertiser,
       adCount: list.length,
       topAd: toDossierAd(list[0]),
+      analysis: toCompetitorAnalysis(list[0]),
     }))
     .sort(
       (a, b) =>

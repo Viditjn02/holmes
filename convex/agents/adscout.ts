@@ -27,7 +27,13 @@ import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { scanAds, enrichTopAds } from "../../lib/adscan";
-import { discoverCompetitors, type Competitor } from "../../lib/competitors";
+import {
+  discoverCompetitors,
+  analyzeCompetitors,
+  competitorNameKey,
+  type Competitor,
+  type CompetitorAnalysis,
+} from "../../lib/competitors";
 import {
   MAX_SCAN_ADS,
   SCALING_MIN_DAYS,
@@ -137,6 +143,13 @@ export const save = internalMutation({
         scalingSignal: v.optional(v.boolean()),
         winningAngle: v.optional(v.string()),
         rank: v.optional(v.number()),
+        competitorAnalysis: v.optional(
+          v.object({
+            whatTheyreBuilding: v.string(),
+            pros: v.array(v.string()),
+            cons: v.array(v.string()),
+          }),
+        ),
       }),
     ),
   },
@@ -220,10 +233,26 @@ export const run = internalAction({
       .slice(0, MAX_SCAN_ADS)
       .map((ad, i) => ({ ...ad, rank: i }));
 
+    // STEP F — lightweight COMPETITOR ANALYSIS for the top 2-3 rivals: scrape
+    // their homepage (Supadata, rate-limit-guarded) → OpenAI → { whatTheyre-
+    // Building, pros, cons }. Fully additive + graceful: no key / rate-limited →
+    // empty map → analysis omitted. Attached to every ad row of a matching
+    // advertiser so the dossier can read it from that competitor's top ad.
+    let analysisByName: Map<string, CompetitorAnalysis> = new Map();
+    try {
+      analysisByName = await analyzeCompetitors(toScan, { limit: 3 });
+    } catch {
+      analysisByName = new Map();
+    }
+    const rankedWithAnalysis = ranked.map((ad) => {
+      const a = analysisByName.get(competitorNameKey(ad.advertiser));
+      return a ? { ...ad, competitorAnalysis: a } : ad;
+    });
+
     // Persist (map ScannedAd → the `ads` row shape).
     await ctx.runMutation(internal.agents.adscout.save, {
       runId,
-      ads: ranked.map(toAdRow),
+      ads: rankedWithAnalysis.map(toAdRow),
     });
 
     const top = ranked[0];
@@ -470,9 +499,12 @@ type AdRowInput = {
   scalingSignal?: boolean;
   winningAngle?: string;
   rank?: number;
+  competitorAnalysis?: CompetitorAnalysis;
 };
 
-function toAdRow(ad: ScannedAd & { rank?: number }): AdRowInput {
+function toAdRow(
+  ad: ScannedAd & { rank?: number; competitorAnalysis?: CompetitorAnalysis },
+): AdRowInput {
   return {
     advertiser: ad.advertiser,
     platform: ad.platform,
@@ -496,6 +528,7 @@ function toAdRow(ad: ScannedAd & { rank?: number }): AdRowInput {
     scalingSignal: ad.scalingSignal,
     winningAngle: ad.winningAngle,
     rank: ad.rank,
+    competitorAnalysis: ad.competitorAnalysis,
   };
 }
 

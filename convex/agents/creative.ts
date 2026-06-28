@@ -135,7 +135,7 @@ export const run = internalAction({
     });
     await logEvent(ctx, runId, "rendered", `Rendering a video ad for ${data.company}…`);
 
-    // FREE MoneyPrinter path FIRST (Pexels stock + Edge-TTS + ffmpeg via the
+    // FREE video-worker path FIRST (Pexels stock + Edge-TTS + ffmpeg via the
     // local worker). $0 — no Veo/fal billing. Unreachable ⇒ fast no-op, falls
     // through to the Veo render below. Never blocks the run.
     const free = await tryFreeWorker(ctx, runId, data, prompt);
@@ -226,7 +226,7 @@ export const run = internalAction({
 });
 
 // ----------------------------------------------------------------------------
-// FREE video worker bridge (MoneyPrinter path). Builds short ad scenes from the
+// FREE video worker bridge. Builds short ad scenes from the
 // brief + buyer language, renders via the local worker, stores the returned MP4
 // into Convex storage. Returns null (never throws) when the worker is down or
 // degrades — the caller then falls back to the Veo render. The free path is $0.

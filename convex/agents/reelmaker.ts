@@ -2,7 +2,7 @@
 // INTERCEPT — REEL MAKER AGENT  ·  TRACK 1 (algorithm hacking / virality)
 // ----------------------------------------------------------------------------
 // The short-video beat of the social lane. Reads the brief + the top trend the
-// scout surfaced, builds a MoneyPrinterTurbo-style segmented vertical script
+// scout surfaced, builds a segmented vertical script
 // (convex/virality/reelScript: hook → 3 beats → CTA), and renders a 9:16 reel
 // via lib/veo.generateAd (PRIMARY Veo → FALLBACK open-source fal LTX-Video).
 //
@@ -156,7 +156,7 @@ export const run = internalAction({
     });
     await logEvent(ctx, runId, "rendered", `Rendering a vertical reel for ${data.company}…`);
 
-    // FREE MoneyPrinter path FIRST (Pexels stock + Edge-TTS + ffmpeg via the
+    // FREE video-worker path FIRST (Pexels stock + Edge-TTS + ffmpeg via the
     // local worker). $0 — no Veo/fal billing. If the worker is unreachable it
     // no-ops fast and we fall through to the Veo chain below.
     const free = await tryFreeWorker(ctx, runId, {
@@ -294,7 +294,7 @@ async function groundReelScript(
 }
 
 // ----------------------------------------------------------------------------
-// FREE video worker bridge (MoneyPrinter path). Renders via the local worker,
+// FREE video worker bridge. Renders via the local worker,
 // stores the returned MP4 bytes into Convex storage, and returns the asset.
 // Returns null (never throws) when the worker is down / degrades — the caller
 // then falls back to the Veo chain. The free path costs $0.

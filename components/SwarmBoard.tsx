@@ -211,7 +211,7 @@ const AGENT_META: Record<AgentId, { tagline: string; icon: ReactElement }> = {
 // ----------------------------------------------------------------------------
 // SPECIFIC running status text — never a bare spinner. The live backend `note`
 // (the agent's own truth) always wins; this is the grounded fallback so a tile
-// reads "Scanning live ads for Acme…" instead of an anonymous spinning ring.
+// reads "Scanning live ads for Northwind…" instead of an anonymous spinning ring.
 // {co} interpolates the run's company.
 // ----------------------------------------------------------------------------
 const RUNNING_LABEL: Record<AgentId, string> = {

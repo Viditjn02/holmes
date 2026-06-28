@@ -1,16 +1,14 @@
 // ============================================================================
-// INTERCEPT — TRACK 1 · REEL SCRIPT (MoneyPrinterTurbo segment structure).
+// INTERCEPT — TRACK 1 · REEL SCRIPT (segmented short-video structure).
 //
-// Pure, no deps. Ports MoneyPrinterTurbo's pipeline IDEA (script → segmented
-// scene beats → render prompt) into a deterministic builder. Turns a
-// topic+angle into a segmented vertical-video script — hook → 3 beats → CTA —
-// and assembles a single 9:16 generation prompt the reelmaker hands to
-// lib/veo.generateAd (Veo → fal-LTX fallback).
+// Pure, no deps. A deterministic builder that turns a topic+angle into a
+// segmented vertical-video script — hook → 3 beats → CTA — and assembles a
+// single 9:16 generation prompt the reelmaker hands to lib/veo.generateAd
+// (Veo → fal-LTX fallback).
 //
-// We do NOT run MoneyPrinter's Python or fetch stock footage; we keep its
-// structure (a hook-led script broken into timed scene beats with auto social
-// CTA) and feed it to our existing sponsor video chain. Deterministic so the
-// reel step never stalls even with no LLM.
+// A hook-led script broken into timed scene beats with an auto social CTA,
+// fed to our existing sponsor video chain. Deterministic so the reel step
+// never stalls even with no LLM.
 //
 // DEPLOY-SAFETY: NOT "use node"; defines no Convex functions (utility module).
 // ============================================================================
@@ -40,7 +38,7 @@ function clean(s: string): string {
 
 /**
  * Build a segmented vertical-video script + render prompt from a topic/angle.
- * Structure (MoneyPrinter-style): a scroll-stopping hook, three escalating
+ * Structure: a scroll-stopping hook, three escalating
  * scene beats (tension → insight → product reveal), and a social CTA — all
  * woven into one cinematic 9:16 prompt with on-screen caption cues.
  */
@@ -53,7 +51,7 @@ export function buildReelScript(input: ReelScriptInput): ReelScript {
   // Hook — the first ~1.5s. Pegged to the live topic so it reads as timely.
   const hook = `Everyone's talking about ${topic} — almost nobody gets ${angle}.`;
 
-  // 3 beats: tension → reframe → product payoff. Mirrors MoneyPrinter's
+  // 3 beats: tension → reframe → product payoff. A
   // script→scene split (each beat is one ~2s scene the renderer can cut to).
   const beats = [
     `The old way of handling ${topic} is quietly costing you — show the frustration on screen.`,
@@ -64,7 +62,7 @@ export function buildReelScript(input: ReelScriptInput): ReelScript {
   ];
 
   // CTA — the close. A single explicit ask drives comments/shares (the signal
-  // the algorithm rewards). MoneyPrinter's auto social-metadata step, inlined.
+  // the algorithm rewards). An auto social-metadata step, inlined.
   const cta = `Follow for more on ${topic} — and comment "${company}" if you want the breakdown.`;
 
   // Assemble the one-shot 9:16 generation prompt (scene-by-scene direction).

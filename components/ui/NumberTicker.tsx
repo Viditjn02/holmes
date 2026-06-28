@@ -5,7 +5,7 @@
 //
 // The brief calls for a framer-motion useSpring count-up, but framer-motion is
 // NOT a dependency in this repo (it deliberately stays dep-free — see
-// components/mascot/Mascot.tsx). So this hand-rolls the same feel: a spring-ish
+// components/blip/Blip.tsx). So this hand-rolls the same feel: a spring-ish
 // easeOutCubic tween driven by requestAnimationFrame. On mount it counts from 0;
 // on every value change it tweens from the last shown number to the new one, so
 // runs/threads/replies visibly tick up on camera.

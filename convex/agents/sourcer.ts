@@ -11,8 +11,8 @@
 //                  decision-makers at each account (emails locked here).
 //   3. EMAIL     — Fiber `findContact` for a VERIFIED work email (emailVerified
 //                  is true ONLY when Fiber confirmed it). FALLBACK: when Fiber
-//                  has no match, the OSS guesser (enrich/emailGuess, email-sleuth
-//                  port) yields a clearly-UNVERIFIED best-effort address so
+//                  has no match, the free email guesser (enrich/emailGuess)
+//                  yields a clearly-UNVERIFIED best-effort address so
 //                  outbound still has a target — emailVerified stays UNSET.
 //   4. SIGNAL    — lib/signals `findSignal` attaches one warm buying trigger.
 //
@@ -108,7 +108,7 @@ export const run = internalAction({
         ]);
 
         // 3. EMAIL — Fiber (verified) stays PRIMARY. When Fiber has no verified
-        //    match, fall back to the OSS email guesser (email-sleuth port): a
+        //    match, fall back to the free email guesser: a
         //    best-effort, clearly-UNVERIFIED address so outbound still has a
         //    target. `emailVerified` stays UNSET for a guess — ONLY Fiber sets
         //    it true. Degrades to no email if name/domain are missing.

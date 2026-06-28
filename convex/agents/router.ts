@@ -30,7 +30,7 @@ const INPUT_TYPES: readonly InputType[] = [
 export interface RouterClassification {
   inputType: InputType; // the (possibly corrected) shape of the input
   company: string; // best-guess human company name
-  domain: string | null; // canonical apex domain, e.g. "acme.com"
+  domain: string | null; // canonical apex domain, e.g. "example.com"
   url: string | null; // canonical https URL to fetch, if derivable
   category: string; // short label, e.g. "B2B SaaS — observability"
   rationale: string; // one sentence on why it's classified this way
@@ -60,7 +60,7 @@ export const getRun = internalQuery({
 // Pure helpers — no side effects, easy to reason about.
 // ----------------------------------------------------------------------------
 
-/** Pull a clean apex domain out of arbitrary input (URL, "Acme", "acme.com"). */
+/** Pull a clean apex domain out of arbitrary input (URL, "a company name", "example.com"). */
 function extractDomain(input: string): string | null {
   const trimmed = input.trim().toLowerCase();
   if (!trimmed) return null;
@@ -76,7 +76,7 @@ function extractDomain(input: string): string | null {
     // fall through to regex
   }
 
-  // Bare domain-ish token, e.g. "acme.com" or "sub.acme.io"
+  // Bare domain-ish token, e.g. "example.com" or "sub.example.io"
   const match = trimmed.match(
     /([a-z0-9-]+(?:\.[a-z0-9-]+)+)(?:\/|$|\s)/,
   );
@@ -142,7 +142,7 @@ export const run = internalAction({
           "Return a JSON object with EXACTLY these keys:",
           '- "inputType": one of "url" | "name" | "competitor" | "community" | "text"',
           '- "company": the human-readable company name this input is about',
-          '- "domain": the canonical apex domain (e.g. "acme.com") or null',
+          '- "domain": the canonical apex domain (e.g. "example.com") or null',
           '- "category": a short market category, e.g. "B2B SaaS — observability"',
           '- "rationale": one sentence on why you classified it this way',
         ].join("\n"),

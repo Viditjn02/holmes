@@ -451,6 +451,29 @@ function CompetitorCard({ competitor }: { competitor: DossierCompetitor }) {
         </p>
       )}
 
+      {competitor.analysis && (
+        <div className="space-y-1.5 rounded-md bg-surface-soft px-2.5 py-2">
+          {competitor.analysis.whatTheyreBuilding && (
+            <p className="text-body-sm leading-snug text-ink/80">
+              <span className="eyebrow mr-1 text-[11px]">Building</span>
+              {competitor.analysis.whatTheyreBuilding}
+            </p>
+          )}
+          {competitor.analysis.pros.length > 0 && (
+            <p className="text-body-sm leading-snug text-ink/70">
+              <span className="eyebrow mr-1 text-[11px]">Strengths</span>
+              {competitor.analysis.pros.join(" · ")}
+            </p>
+          )}
+          {competitor.analysis.cons.length > 0 && (
+            <p className="text-body-sm leading-snug text-ink/70">
+              <span className="eyebrow mr-1 text-[11px]">Gaps</span>
+              {competitor.analysis.cons.join(" · ")}
+            </p>
+          )}
+        </div>
+      )}
+
       <a
         href={ad.url}
         target="_blank"

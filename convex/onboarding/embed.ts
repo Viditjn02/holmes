@@ -4,9 +4,9 @@
 // Pure, fetch-free. Deterministically emits a paste-ready tour from the
 // structured steps the guide agent generated:
 //   • buildEmbed       — Shepherd.js (default) or OnboardJS init code, served
-//                        from the MIT CDNs, hardened with a finderx-style
+//                        from the MIT CDNs, hardened with a resilient selector
 //                        fallback so a step whose selector drifted still anchors.
-//   • suggestSelectors — usertour/finderx-style heuristic: a step title → the
+//   • suggestSelectors — a heuristic mapping a step title → the
 //                        most likely CSS selectors to attach the tooltip to.
 //
 // DEPLOY-SAFETY: NOT "use node"; defines no Convex functions (utility module).
@@ -47,7 +47,7 @@ export function buildEmbed(
 // Shepherd.js — the default tour UI. Self-contained ES-module snippet: pulls
 // the MIT Shepherd build + CSS from the CDN, then walks the steps. Each step's
 // `attachTo` falls back through suggestSelectors() so a single stale selector
-// never breaks the tour (the finderx-style resilience).
+// never breaks the tour (selector resilience).
 // ----------------------------------------------------------------------------
 function buildShepherdEmbed(steps: OnboardingStep[]): string {
   const stepSrc = steps
@@ -78,7 +78,7 @@ function buildShepherdEmbed(steps: OnboardingStep[]): string {
 import Shepherd from '${SHEPHERD_JS}';
 
 // Resilience: attach to the first selector that resolves on the page.
-// (Port of usertour/finderx element re-finding — a drifted selector degrades.)
+// Resilience: a drifted selector degrades gracefully instead of breaking.
 const pick = (selectors) =>
   selectors.find((sel) => { try { return document.querySelector(sel); } catch { return false; } })
   || selectors[selectors.length - 1];
@@ -134,8 +134,8 @@ await engine.start();
 }
 
 // ----------------------------------------------------------------------------
-// suggestSelectors — usertour/finderx-style heuristic. We don't have the live
-// DOM at generation time, so instead of finderx's element→selector walk we run
+// suggestSelectors — a selector heuristic. We don't have the live
+// DOM at generation time, so instead of an element→selector walk we run
 // the inverse: a step title → the most likely selectors a real app would use
 // for that element (data-onboarding hooks first, then id/class/aria/text).
 // ----------------------------------------------------------------------------

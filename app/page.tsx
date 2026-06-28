@@ -12,7 +12,7 @@ import ChatPanel from "@/components/ChatPanel";
 import CanvasPanel, { type CanvasView } from "@/components/CanvasPanel";
 import CommandPalette from "@/components/CommandPalette";
 import PanelBoundary from "@/components/ErrorBoundary";
-import MascotCompanion from "@/components/mascot/MascotCompanion";
+import BlipCompanion from "@/components/blip/BlipCompanion";
 
 // ============================================================================
 // INTERCEPT — the single chat+canvas surface. ONE AI-native chat (left); a live
@@ -78,10 +78,10 @@ export default function Home() {
         </ResizablePanelGroup>
       </div>
 
-      {/* Reactive delight mascot — a fixed bottom-right corner companion that
-          lights up on the live swarm's wins. Pure delight, never a chat input;
-          pointer-events-none except the sprite, so it never blocks the UI. */}
-      <MascotCompanion
+      {/* Blip — a fixed bottom-right corner companion that lights up on the live
+          swarm's wins. Pure delight, never a chat input; pointer-events-none
+          except the sprite, so it never blocks the UI. */}
+      <BlipCompanion
         runId={focusedRunId}
         conversationId={conversationId}
         onFocusRun={focusRun}

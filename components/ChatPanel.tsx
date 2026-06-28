@@ -38,7 +38,7 @@ const EXAMPLES: { label: string; text: string; mode: Mode }[] = [
 ];
 
 const MODE_PLACEHOLDER: Record<Mode, string> = {
-  pipeline: "Ask about a deal, or 'add Acme to pipeline'…",
+  pipeline: "Ask about a deal, or 'add Northwind to pipeline'…",
   adfactory: "Describe an ad, or 'show top performers'…",
   brain: "Ask what I know, or paste a doc to teach me…",
   default: "Paste a company, a competitor, an idea — or just ask…",

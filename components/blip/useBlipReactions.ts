@@ -1,10 +1,9 @@
 "use client";
 
 /**
- * useMascotReactions — maps INTERCEPT's LIVE Convex state onto the mascot's mood
- * and a fun, ambient one-liner speech bubble. This is the REPURPOSE of Acme's
- * guide flow: there Acey walked you through a form; here the mascot is pure
- * delight that reacts to the swarm working beside you. It NEVER takes input.
+ * useBlipReactions — maps INTERCEPT's LIVE Convex state onto the blip's mood
+ * and a fun, ambient one-liner speech bubble. The blip is pure delight that
+ * reacts to the swarm working beside you; it NEVER takes input.
  *
  * Reaction model (priority high → low):
  *   1. a one-shot beat is active (celebrate / concerned / peek / nod)  → show it
@@ -40,10 +39,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
-import type { MascotState } from "./Mascot";
+import type { BlipState } from "./Blip";
 
 /** One-shot beats auto-return to the resolved base (idle/thinking) after this
- *  long — matches Acme's Companion.ONE_SHOT_MS so the beat reads, then resolves. */
+ *  long, so the beat reads, then resolves. */
 const ONE_SHOT_MS = 2200;
 /** A fun one-liner lingers a touch longer than the pose, then auto-dismisses. */
 const SPEECH_MS = 4600;
@@ -60,9 +59,9 @@ interface PostRow { _id: string; viralityScore?: number }
 interface CreativeRow { _id: string }
 interface EventRow { _id: string; kind: string; message: string; createdAt: number }
 
-export interface MascotReaction {
-  /** The mood to feed into <Mascot state={...} />. */
-  state: MascotState;
+export interface BlipReaction {
+  /** The mood to feed into <Blip state={...} />. */
+  state: BlipState;
   /** A fun ambient one-liner for an OPTIONAL speech bubble, or null. Never an input. */
   speech: string | null;
   /** Dismiss the current speech bubble early (e.g. on click). */
@@ -71,18 +70,18 @@ export interface MascotReaction {
   busy: boolean;
 }
 
-interface UseMascotReactionsOptions {
+interface UseBlipReactionsOptions {
   /** The focused run — enables per-run win signals (threads/emails/posts/ads). */
   runId?: Id<"runs"> | null;
   /** The active conversation — enables the event-feed ambient one-liners. */
   conversationId?: Id<"conversations"> | null;
-  /** Master switch (default true). When false, the mascot just idles. */
+  /** Master switch (default true). When false, the blip just idles. */
   enabled?: boolean;
 }
 
-export function useMascotReactions(
-  options: UseMascotReactionsOptions = {},
-): MascotReaction {
+export function useBlipReactions(
+  options: UseBlipReactionsOptions = {},
+): BlipReaction {
   const { runId = null, conversationId = null, enabled = true } = options;
 
   // ----- live subscriptions (all reactive; "skip" when an id is absent) -----
@@ -111,12 +110,12 @@ export function useMascotReactions(
   ) as EventRow[] | undefined;
 
   // ----- one-shot + speech beat (latest beat wins; auto-resolves) -----
-  const [oneShot, setOneShot] = useState<MascotState | null>(null);
+  const [oneShot, setOneShot] = useState<BlipState | null>(null);
   const [speech, setSpeech] = useState<string | null>(null);
   const oneShotTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const speechTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fire = useCallback((state: MascotState, line?: string | null) => {
+  const fire = useCallback((state: BlipState, line?: string | null) => {
     setOneShot(state);
     if (oneShotTimer.current) clearTimeout(oneShotTimer.current);
     oneShotTimer.current = setTimeout(() => setOneShot(null), ONE_SHOT_MS);
@@ -237,19 +236,19 @@ export function useMascotReactions(
 
   // ----- resolve the final state (one-shot beats out the running/idle base) -----
   const busy = !!runs && runs.some((r) => r.status === "running");
-  const state: MascotState = oneShot ?? (busy ? "thinking" : "idle");
+  const state: BlipState = oneShot ?? (busy ? "thinking" : "idle");
 
   return { state, speech, dismissSpeech, busy };
 }
 
 /**
  * Map an event-feed row to a tasteful ambient beat + one-liner. Returns null for
- * kinds that shouldn't surface a bubble (keeps the mascot from chattering). FUN,
+ * kinds that shouldn't surface a bubble (keeps the blip from chattering). FUN,
  * never instructional — and never a prompt for input.
  */
 function ambientLineFor(
   ev: EventRow,
-): { state: MascotState; text: string } | null {
+): { state: BlipState; text: string } | null {
   const kind = ev.kind.toLowerCase();
   switch (kind) {
     case "found":

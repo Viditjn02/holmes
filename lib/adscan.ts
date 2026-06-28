@@ -3,7 +3,7 @@
 // ----------------------------------------------------------------------------
 // Token-free competitor ad intelligence. Given an advertiser (brand/domain),
 // `scanAds` pulls their LIVE ads across Google + Meta + TikTok WITHOUT any API
-// token — the exact gate QuickAds can't get past. Sources are layered and each
+// token — the exact gate most ad scrapers can't get past. Sources are layered and each
 // degrades into the next:
 //
 //   0. Google Ads Transparency Center — the PRIMARY lane. A plain server-side

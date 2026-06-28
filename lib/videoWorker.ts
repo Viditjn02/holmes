@@ -1,5 +1,5 @@
 // ============================================================================
-// INTERCEPT — FREE VIDEO WORKER CLIENT  (MoneyPrinter path, $0)
+// INTERCEPT — FREE VIDEO WORKER CLIENT  ($0)
 // ----------------------------------------------------------------------------
 // Thin, deploy-safe client for the local video worker (scripts/video-worker.mjs).
 // The worker stitches Pexels stock footage + free Edge-TTS narration + ffmpeg
@@ -63,7 +63,7 @@ const UNREACHABLE: RenderVideoResult = {
   ok: false,
   degraded: true,
   reason: "worker_unreachable",
-  model: "moneyprinter-pexels-edgetts",
+  model: "free-pexels-edgetts",
 };
 
 function workerUrl(): string {
@@ -118,7 +118,7 @@ export async function renderVideo(input: RenderVideoInput): Promise<RenderVideoR
       ...json,
       ok: json.ok === true,
       degraded: json.degraded ?? false,
-      model: json.model ?? "moneyprinter-pexels-edgetts",
+      model: json.model ?? "free-pexels-edgetts",
     };
   } catch (e) {
     return { ...UNREACHABLE, reason: e instanceof Error ? `worker_error:${e.message}` : "worker_error" };

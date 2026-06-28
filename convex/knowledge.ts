@@ -1,7 +1,7 @@
 // ============================================================================
 // INTERCEPT — KNOWLEDGE ENGINE (Convex side of the compounding wiki loop).
 // ----------------------------------------------------------------------------
-// The native-Convex port of applyagent's Wiki Knowledge Loop. THREE actions +
+// The native-Convex Wiki Knowledge Loop. THREE actions +
 // the queries/mutations they ride on, all in the DEFAULT runtime (NOT "use
 // node"): they use chatJSON/embed (fetch SDK) + ctx.vectorSearch + typed
 // ctx.runQuery/ctx.runMutation — exactly what enrich/detective already do.
@@ -472,7 +472,7 @@ export const ingestFromRun = internalAction({
 });
 
 /**
- * QUERY — the agent-facing recall (applyagent's read_context analogue). Merges:
+ * QUERY — the agent-facing recall (a read_context-style merge). Merges:
  *   (a) the exact entity page (fast path, when entityType+entityKey given),
  *   (b) semantic neighbours via OpenAI embed + ctx.vectorSearch (entityType
  *       filter when given),

@@ -105,8 +105,8 @@ export default defineSchema({
 
   // ==========================================================================
   // ORCHESTRATION — one RUN is one capability execution (a swarm cycle). It owns
-  // the hard fan-in deadline so the board always settles. Reused, adapted from the
-  // previous build: `agentStatus` drives the live tiles verbatim.
+  // the hard fan-in deadline so the board always settles: `agentStatus` drives
+  // the live tiles verbatim.
   // ==========================================================================
   runs: defineTable({
     // Provenance: which conversation/message/campaign spawned this run.
@@ -420,6 +420,19 @@ export default defineSchema({
     scalingSignal: v.optional(v.boolean()), // active + ≥21d ⇒ a scaling winner
     winningAngle: v.optional(v.string()),
     rank: v.optional(v.number()),
+
+    // COMPETITOR ANALYSIS (additive, graceful): a lightweight read of what this
+    // competitor is building + their strengths/gaps, derived from a Supadata
+    // homepage scrape → OpenAI. Attached to each of the advertiser's ad rows so
+    // the dossier can surface it from the top ad. Omitted entirely when no
+    // Supadata/OpenAI key or rate-limited — never blocks the scan.
+    competitorAnalysis: v.optional(
+      v.object({
+        whatTheyreBuilding: v.string(),
+        pros: v.array(v.string()),
+        cons: v.array(v.string()),
+      }),
+    ),
   }).index("by_run", ["runId"]),
 
   // ==========================================================================

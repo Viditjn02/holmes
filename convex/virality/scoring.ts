@@ -1,5 +1,6 @@
 // ============================================================================
-// INTERCEPT — TRACK 1 · VIRALITY SCORING (OSS PLUS).
+// INTERCEPT — TRACK 1 · VIRALITY SCORING.
+// (Third-party attribution for the scoring rubric lives in THIRD_PARTY_NOTICES.md.)
 //
 // Pure, fetch-free, deterministic. A "harsh reviewer" virality model the
 // composer uses to score every drafted post variant 0-100 and pick the best one
