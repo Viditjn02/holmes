@@ -82,6 +82,22 @@ const ASPECTS = {
   "1:1": { w: 1080, h: 1080, orientation: "square" },
 };
 
+// Honor a caller's orientation choice. Accepts `body.aspect` (the landscape/
+// portrait option OR a ratio) and the legacy `body.aspectRatio`, mapping either
+// to an ASPECTS key for the ffmpeg canvas. Defaults to portrait 9:16.
+const ASPECT_ALIASES = {
+  portrait: "9:16",
+  vertical: "9:16",
+  landscape: "16:9",
+  horizontal: "16:9",
+  square: "1:1",
+};
+function resolveAspect(body) {
+  const raw = String(body.aspect ?? body.aspectRatio ?? "").toLowerCase().trim();
+  const key = ASPECT_ALIASES[raw] || raw;
+  return ASPECTS[key] || ASPECTS["9:16"];
+}
+
 const FONT_CANDIDATES = [
   "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
   "/System/Library/Fonts/Helvetica.ttc",
@@ -579,7 +595,7 @@ async function render(body) {
     };
   }
 
-  const aspect = ASPECTS[body.aspectRatio] || ASPECTS["9:16"];
+  const aspect = resolveAspect(body);
   const voice = body.voice || DEFAULT_VOICE;
   const captionsOn = body.captions !== false;
   const targetTotal = Number(body.durationSeconds) > 0 ? Number(body.durationSeconds) : 0;

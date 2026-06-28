@@ -284,6 +284,22 @@ export default function EmailDesigner() {
     setSelectedTemplateId(null);
   }, []);
 
+  // Snap every brand/design control back to the clean default design.
+  const resetDesign = useCallback(() => {
+    setDesign(DEFAULT_DESIGN);
+    setSelectedTemplateId(null);
+    setNote(null);
+  }, []);
+
+  // Has the design drifted from the default? (drives the Reset affordance)
+  const isDesignDirty = useMemo(
+    () =>
+      (Object.keys(DEFAULT_DESIGN) as (keyof DesignState)[]).some(
+        (k) => design[k] !== DEFAULT_DESIGN[k],
+      ) || selectedTemplateId !== null,
+    [design, selectedTemplateId],
+  );
+
   const selectDraft = useCallback(
     (key: string) => {
       setActiveDraft(key);
@@ -524,7 +540,12 @@ export default function EmailDesigner() {
 
                 {mode === "design" && (
                   <>
-                    <DesignControls design={design} onChange={updateDesign} />
+                    <DesignControls
+                      design={design}
+                      onChange={updateDesign}
+                      onReset={resetDesign}
+                      canReset={isDesignDirty}
+                    />
 
                     <div className="space-y-2">
                       <p className="caption font-mono uppercase text-ink/45">Saved templates</p>
@@ -673,13 +694,32 @@ export default function EmailDesigner() {
 function DesignControls({
   design,
   onChange,
+  onReset,
+  canReset,
 }: {
   design: DesignState;
   onChange: (patch: Partial<DesignState>) => void;
+  onReset: () => void;
+  canReset: boolean;
 }) {
   return (
     <div className="space-y-3.5 rounded-lg border border-hairline bg-surface-soft/60 p-3.5">
-      <p className="caption font-mono uppercase tracking-wide text-ink/55">Design</p>
+      <div className="flex items-center justify-between">
+        <p className="caption font-mono uppercase tracking-wide text-ink/55">Design</p>
+        <button
+          type="button"
+          onClick={onReset}
+          disabled={!canReset}
+          title="Reset to the default design"
+          className="inline-flex items-center gap-1 rounded-pill border border-hairline bg-canvas px-2.5 py-1 text-[11px] font-fig-link text-ink/70 transition-colors hover:bg-surface-soft hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3" aria-hidden>
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M3 4v4h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          Reset
+        </button>
+      </div>
 
       {/* Layout variant */}
       <div>

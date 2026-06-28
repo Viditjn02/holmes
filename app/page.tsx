@@ -85,6 +85,7 @@ export default function Home() {
     setActiveTrack(null);
     setCanvasView("run");
     setSurface("workspace");
+    setHistoryOpen(true); // picking a PAST conversation reveals its transcript/history
   }, []);
 
   const newChat = useCallback(() => {

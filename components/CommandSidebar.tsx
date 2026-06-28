@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo, useRef, type ReactElement } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactElement,
+  type RefObject,
+} from "react";
 import { useMutation, useQuery } from "convex/react";
 import type { Id } from "@/convex/_generated/dataModel";
 import type { Intent } from "@/lib/contract";
@@ -140,6 +147,35 @@ export default function CommandSidebar({
   // re-renders (focused-run pings, Blip reactions, hover state) don't rebuild the
   // whole list — the sidebar felt sluggish when it mapped all 50 every render.
   const recent = useMemo(() => dedupeRecent(conversations), [conversations]);
+
+  // The Recent scroll region — wired to the up/down chevron affordances so the
+  // founder can see (and drive) that the list scrolls.
+  const recentScrollRef = useRef<HTMLDivElement>(null);
+
+  // Selecting a past conversation must do TWO things: switch the page to that
+  // conversation (onSelectConversation → page sets conversationId + workspace)
+  // AND reveal its transcript, because the rehydrated message history renders in
+  // the page's "Run transcript" drawer — which is closed by default. The page
+  // owns that drawer, so we signal it over the same intercept:* CustomEvent bus
+  // the rest of the app uses (intercept:compose, intercept:open-command-palette).
+  // Without this, a selected conversation lands on the canvas with its history
+  // hidden, which reads as "the history is empty".
+  // REPORT (cross-file): app/page.tsx must open the drawer on this signal — add
+  //   useEffect(() => { const h = () => setHistoryOpen(true);
+  //     window.addEventListener("intercept:open-transcript", h);
+  //     return () => window.removeEventListener("intercept:open-transcript", h);
+  //   }, []);
+  // (Equivalently: add `setHistoryOpen(true)` inside `selectConversation`.)
+  const handleSelectConversation = (id: Id<"conversations">) => {
+    onSelectConversation(id);
+    if (typeof window !== "undefined") {
+      try {
+        window.dispatchEvent(new CustomEvent("intercept:open-transcript"));
+      } catch {
+        /* selection still works even if the signal can't be dispatched */
+      }
+    }
+  };
 
   const onDelete = async (e: React.MouseEvent, id: Id<"conversations">) => {
     e.stopPropagation();
@@ -314,7 +350,11 @@ export default function CommandSidebar({
           New
         </button>
       </div>
-      <div className="col-scroll min-h-0 flex-1 overflow-y-auto px-2 pb-2">
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={recentScrollRef}
+          className="col-scroll h-full overflow-y-auto px-2 pb-2"
+        >
         {conversations === undefined ? (
           <div className="space-y-1.5 px-1 py-1">
             {[0, 1, 2].map((i) => (
@@ -332,7 +372,7 @@ export default function CommandSidebar({
               return (
                 <li key={c._id}>
                   <button
-                    onClick={() => onSelectConversation(c._id)}
+                    onClick={() => handleSelectConversation(c._id)}
                     className={cn(
                       "group flex w-full items-center gap-2 rounded-md px-2.5 py-1 text-left transition-colors",
                       active ? "bg-canvas" : "hover:bg-canvas",
@@ -361,6 +401,8 @@ export default function CommandSidebar({
             })}
           </ul>
         )}
+        </div>
+        <ScrollChevrons scrollRef={recentScrollRef} />
       </div>
 
       {/* FOOTER — persistent ⌘K affordance + theme */}
@@ -425,6 +467,80 @@ function NavRow({
         <span className="caption block truncate text-ink/50">{sublabel}</span>
       </span>
     </button>
+  );
+}
+
+// ── ScrollChevrons — tiny up/down affordances overlaid on a scroll region so it
+// reads as scrollable. Pure + presentational: each chevron fades in only when
+// there is overflow in that direction, and nudges the region ~80% of a page on
+// click. Lives over a `relative` wrapper; needs only the scroll element's ref. ──
+function ScrollChevrons({
+  scrollRef,
+}: {
+  scrollRef: RefObject<HTMLDivElement | null>;
+}) {
+  const [edges, setEdges] = useState({ up: false, down: false });
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => {
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      setEdges({
+        up: scrollTop > 4,
+        down: scrollTop + clientHeight < scrollHeight - 4,
+      });
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, [scrollRef]);
+
+  const nudge = (dir: 1 | -1) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({
+      top: dir * Math.max(el.clientHeight * 0.8, 96),
+      behavior: "smooth",
+    });
+  };
+
+  return (
+    <div aria-hidden={!edges.up && !edges.down} className="pointer-events-none">
+      <button
+        type="button"
+        onClick={() => nudge(-1)}
+        aria-label="Scroll up"
+        tabIndex={edges.up ? 0 : -1}
+        className={cn(
+          "absolute left-1/2 top-1 z-10 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full border border-hairline bg-canvas/90 text-ink/70 shadow-sm backdrop-blur transition-opacity hover:text-ink",
+          edges.up ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+        )}
+      >
+        <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3">
+          <path d="M6 15l6-6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        onClick={() => nudge(1)}
+        aria-label="Scroll down"
+        tabIndex={edges.down ? 0 : -1}
+        className={cn(
+          "absolute bottom-1 left-1/2 z-10 flex h-5 w-5 -translate-x-1/2 items-center justify-center rounded-full border border-hairline bg-canvas/90 text-ink/70 shadow-sm backdrop-blur transition-opacity hover:text-ink",
+          edges.down ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+        )}
+      >
+        <svg viewBox="0 0 24 24" fill="none" className="h-3 w-3">
+          <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+    </div>
   );
 }
 

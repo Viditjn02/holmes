@@ -109,10 +109,12 @@ export const CommandBar = forwardRef<CommandBarHandle, CommandBarProps>(
           className,
         )}
       >
-        {/* Scrim — fades scrolling content into the canvas BEFORE it reaches the
-            bar, and gives the pill a solid backing so nothing shows through it
-            (founder: "nothing should scroll behind the command bar"). Token-based
-            so it tracks the light/dark canvas. */}
+        {/* Scrim — a gentle canvas fade in the gutter above the bar. The real
+            "nothing bleeds behind the bar" fix is two-fold: (1) the pill below is
+            a SOLID opaque bg-canvas backing (not translucent glass), and (2) the
+            scroll containers (DashboardHome + CanvasPanel) mask their bottom edge
+            so content fades out cleanly at the bar's top edge. Token-based so it
+            tracks the light/dark canvas. */}
         <div
           aria-hidden
           className="pointer-events-none absolute inset-x-0 -top-12 bottom-0 bg-gradient-to-t from-canvas via-canvas/92 to-transparent"
@@ -120,8 +122,10 @@ export const CommandBar = forwardRef<CommandBarHandle, CommandBarProps>(
         <form
           onSubmit={onFormSubmit}
           className={cn(
-            "glass-1 pointer-events-auto relative z-10 flex w-full max-w-[680px] items-center gap-sm",
-            "rounded-pill border border-hairline pl-xs pr-xs py-1.5 shadow-glass-1",
+            // OPAQUE backing pill — solid bg-canvas (NOT translucent glass) so no
+            // scrolling content can ever show through the bar.
+            "pointer-events-auto relative z-10 flex w-full max-w-[680px] items-center gap-sm",
+            "rounded-pill border border-hairline bg-canvas pl-xs pr-xs py-1.5 shadow-glass-1",
             "transition-shadow focus-within:shadow-glass-2",
             disabled && "opacity-60",
           )}

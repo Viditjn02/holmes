@@ -1,22 +1,25 @@
 // ============================================================================
-// INTERCEPT — MULTI-PROVIDER VIDEO AD CLIENT
+// INTERCEPT — MULTI-PROVIDER VIDEO AD CLIENT (text-to-video)
 // The Creative agent (convex/agents/creative.ts) calls generateAd to render the
-// video ad. Called from a "use node" Convex action.
+// video ad. generateAd is the Veo→fal SEGMENT of the agent's swappable provider
+// chain; the chain's deploy-safe PRIMARY is WaveSpeed LTX-2.3 (lib/wavespeed.ts,
+// image-to-video), tried upstream in creative.ts before generateAd, and the $0
+// local Ken-Burns worker is the last-resort fallback after it.
 //
-// PROVIDER CHAIN (same generateAd(input) signature + return shape for all):
-//   1. PRIMARY  — Veo (Google, veo-3.1-fast-generate-001). Native audio, but
-//      requires a Google AI Studio / Vertex project with PAID billing enabled.
-//      On a free key this 403s.
-//   2. FALLBACK — fal.ai hosting the OPEN-SOURCE LTX-Video model. LTX-Video is
-//      open source (Lightricks); fal.ai only rents the GPU + exposes a REST
-//      queue. It has NO native audio (silent clip), but it renders on a
-//      cheap/free-tier key, so it keeps the swarm's brief alive when Veo can't.
+// PROVIDER CHAIN HERE (same generateAd(input) signature + return shape for both):
+//   1. Veo (Google, veo-3.1-fast-generate-001). Native audio, but requires a
+//      Google AI Studio / Vertex project with PAID billing enabled. On a free
+//      key this 403s.
+//   2. fal.ai hosting the OPEN-SOURCE LTX-Video model. LTX-Video is open source
+//      (Lightricks); fal.ai only rents the GPU + exposes a REST queue. It has NO
+//      native audio (silent clip), but it renders on a cheap/free-tier key, so it
+//      keeps the swarm's brief alive when Veo can't.
 //
 // We try Veo first; on missing GOOGLE_API_KEY / Veo error / Veo timeout we fall
 // back to LTX via fal.ai. If neither provider is configured/usable we return
 // { url: undefined } — the feature NO-OPs silently and NEVER throws / blocks the
-// swarm. Keys are read from process.env: GOOGLE_API_KEY (or GEMINI_API_KEY) and
-// FAL_KEY.
+// swarm (creative.ts then tries the local worker, else the static ad). Keys are
+// read from process.env: GOOGLE_API_KEY (or GEMINI_API_KEY) and FAL_KEY.
 //
 //   Veo's returned file.uri is a Google Files API URL that needs the API key
 //   appended (?key=...) to download the bytes — we return the key-appended URL

@@ -8,6 +8,7 @@ import {
   useState,
   type FormEvent,
   type KeyboardEvent,
+  type RefObject,
 } from "react";
 import { useMutation, useQuery } from "convex/react";
 import type { Id } from "@/convex/_generated/dataModel";
@@ -205,21 +206,24 @@ export default function ChatPanel({
   return (
     <div className="flex h-full min-h-0 flex-col bg-canvas text-ink">
       {/* messages */}
-      <div ref={scrollRef} className="col-scroll min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
-          {!hasMessages ? (
-            <Welcome onPick={(t) => void submit(t)} />
-          ) : (
-            (messages ?? []).map((m) => (
-              <ChatMessage
-                key={m._id}
-                message={m}
-                focused={!!m.runId && m.runId === focusedRunId}
-                onFocusRun={onFocusRun}
-              />
-            ))
-          )}
+      <div className="relative min-h-0 flex-1">
+        <div ref={scrollRef} className="col-scroll h-full overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
+            {!hasMessages ? (
+              <Welcome onPick={(t) => void submit(t)} />
+            ) : (
+              (messages ?? []).map((m) => (
+                <ChatMessage
+                  key={m._id}
+                  message={m}
+                  focused={!!m.runId && m.runId === focusedRunId}
+                  onFocusRun={onFocusRun}
+                />
+              ))
+            )}
+          </div>
         </div>
+        {hasMessages && <ScrollChevrons scrollRef={scrollRef} />}
       </div>
 
       {/* composer */}
@@ -276,6 +280,80 @@ export default function ChatPanel({
           </p>
         </form>
       </div>
+    </div>
+  );
+}
+
+// ── ScrollChevrons — tiny up/down affordances overlaid on the transcript so a
+// long history reads as scrollable. Each chevron fades in only when there's
+// overflow that way and nudges ~80% of a page on click. Needs a `relative`
+// wrapper and the scroll element's ref; pure + presentational. ────────────────
+function ScrollChevrons({
+  scrollRef,
+}: {
+  scrollRef: RefObject<HTMLDivElement | null>;
+}) {
+  const [edges, setEdges] = useState({ up: false, down: false });
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () => {
+      const { scrollTop, scrollHeight, clientHeight } = el;
+      setEdges({
+        up: scrollTop > 4,
+        down: scrollTop + clientHeight < scrollHeight - 4,
+      });
+    };
+    update();
+    el.addEventListener("scroll", update, { passive: true });
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener("scroll", update);
+      ro.disconnect();
+    };
+  }, [scrollRef]);
+
+  const nudge = (dir: 1 | -1) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollBy({
+      top: dir * Math.max(el.clientHeight * 0.8, 96),
+      behavior: "smooth",
+    });
+  };
+
+  return (
+    <div aria-hidden={!edges.up && !edges.down} className="pointer-events-none">
+      <button
+        type="button"
+        onClick={() => nudge(-1)}
+        aria-label="Scroll up"
+        tabIndex={edges.up ? 0 : -1}
+        className={cn(
+          "absolute left-1/2 top-2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-hairline bg-canvas/90 text-ink/70 shadow-sm backdrop-blur transition-opacity hover:text-ink",
+          edges.up ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+        )}
+      >
+        <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5">
+          <path d="M6 15l6-6 6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        onClick={() => nudge(1)}
+        aria-label="Scroll down"
+        tabIndex={edges.down ? 0 : -1}
+        className={cn(
+          "absolute bottom-2 left-1/2 z-10 flex h-6 w-6 -translate-x-1/2 items-center justify-center rounded-full border border-hairline bg-canvas/90 text-ink/70 shadow-sm backdrop-blur transition-opacity hover:text-ink",
+          edges.down ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0",
+        )}
+      >
+        <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5">
+          <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
     </div>
   );
 }

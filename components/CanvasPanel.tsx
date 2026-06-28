@@ -7,6 +7,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
 } from "react";
 import { flushSync } from "react-dom";
 import { useMutation, useQuery } from "convex/react";
@@ -98,6 +99,17 @@ const MODE_META: Record<Capability, { label: string; board: string; dot: string 
 function modeMeta(intent: Capability) {
   return MODE_META[intent] ?? MODE_META.analyze;
 }
+
+// Bottom fade mask for the board scroll — content slides out cleanly at the
+// floating CommandBar's top edge instead of bleeding behind it. Transparent
+// through the bar zone, fading to opaque just above it. Paired with the opaque
+// CommandBar pill + the board's bottom padding.
+const BAR_FADE_MASK: CSSProperties = {
+  WebkitMaskImage:
+    "linear-gradient(to top, transparent 0, transparent 4.5rem, #000 7.5rem)",
+  maskImage:
+    "linear-gradient(to top, transparent 0, transparent 4.5rem, #000 7.5rem)",
+};
 
 // Honour the user's motion preference so the morph never fights accessibility.
 function usePrefersReducedMotion(): boolean {
@@ -619,10 +631,12 @@ function CanvasForRun({
       ref={scrollRef}
       onScroll={onScroll}
       className="col-scroll h-full min-h-0 overflow-y-auto"
+      style={BAR_FADE_MASK}
     >
-      {/* pb-28 clears the workspace's floating command bar that now overlays the
-          full-width canvas (no more permanent chat column). */}
-      <div className="mx-auto w-full max-w-4xl px-5 pb-32 pt-5">
+      {/* pb clears + the bottom mask fades content out at the floating command
+          bar's top edge, so the board "slides out from the top of the bar" rather
+          than bleeding behind it (no more permanent chat column). */}
+      <div className="mx-auto w-full max-w-4xl px-5 pb-36 pt-5">
         {/* run switcher (only when more than one run) */}
         {runs.length > 1 && (
           <div className="mb-4 flex flex-wrap items-center gap-1.5">

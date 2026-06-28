@@ -385,6 +385,23 @@ export type ChatRole = "user" | "assistant" | "system";
 export type CampaignStatus = "draft" | "active" | "paused" | "archived";
 export type Autonomy = "review" | "autopilot";
 
+// ----------------------------------------------------------------------------
+// VIDEO AD ASPECT — landscape vs portrait option for the Creative video lane.
+// The user-facing option is `AdAspect`; every video provider (WaveSpeed / Veo /
+// fal) and the local Ken-Burns worker speak the `AspectRatio` wire string. The
+// option is threaded creative.ts → providers + worker via `aspectRatioFor`.
+// ----------------------------------------------------------------------------
+/** User-facing orientation option for the generated video ad. */
+export type AdAspect = "portrait" | "landscape";
+/** The wire aspect-ratio string every video provider + the worker accept. */
+export type AspectRatio = "9:16" | "16:9";
+/** Default orientation — vertical, built for the feeds the buyers live in. */
+export const DEFAULT_AD_ASPECT: AdAspect = "portrait";
+/** Map the orientation option → the provider/worker aspect-ratio string. */
+export function aspectRatioFor(aspect: AdAspect): AspectRatio {
+  return aspect === "landscape" ? "16:9" : "9:16";
+}
+
 export type ProspectStage =
   | "sourced"
   | "enriched"

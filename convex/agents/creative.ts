@@ -1,10 +1,21 @@
 // ============================================================================
-// INTERCEPT — CREATIVE AGENT (Veo video ad)
+// INTERCEPT — CREATIVE AGENT (provider-agnostic video ad)
 //
-// Kicked EARLY by the orchestrator so the ~73s Veo render lands before the
-// fan-in deadline. It reads whatever the swarm has produced so far (brief,
-// company, and the buyers' own language from `threads` — the moat) and turns
-// that into a short, cinematic ad prompt, then calls lib/veo.generateAd.
+// Kicked EARLY by the orchestrator so the render lands before the fan-in
+// deadline. It reads whatever the swarm has produced so far (brief, company,
+// and the buyers' own language from `threads` — the moat) and turns that into a
+// short, cinematic ad prompt, then renders it through a SWAPPABLE provider chain
+// that picks the FIRST provider whose key/precondition is present:
+//
+//   1. WaveSpeed LTX-2.3 (WAVESPEED_API_KEY) — plain HTTPS, works DEPLOYED;
+//      image-to-video on the gpt-image-1 ad poster.            (lib/wavespeed.ts)
+//   2. Veo          (GOOGLE_API_KEY)   ─┐ text-to-video, inside lib/veo.generateAd
+//   3. fal LTX      (FAL_KEY)          ─┘ (Veo → fal fallback chain)
+//   4. local Ken-Burns worker (VIDEO_WORKER_URL) — $0, localhost only.
+//   5. none → the static gpt-image-1 ad ("preview"; graceful, never a red fail).
+//
+// So setting ANY one key yields a video. The chosen ASPECT (landscape/portrait,
+// from lib/contract) is threaded through every provider + the worker.
 //
 // Persistence is owned by THIS file (per the swarm convention): a single
 // `video` row in `creatives`, flipped rendering -> done(+url) | failed. The
@@ -27,12 +38,23 @@ import { internalAction, internalMutation, internalQuery } from "../_generated/s
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { MAX_THREADS } from "../../lib/contract";
+import {
+  MAX_THREADS,
+  DEFAULT_AD_ASPECT,
+  aspectRatioFor,
+  type AdAspect,
+  type AspectRatio,
+} from "../../lib/contract";
 import { generateAd } from "../../lib/veo";
+import { generateVideoFromImage } from "../../lib/wavespeed";
 import { renderVideo } from "../../lib/videoWorker";
 
 const VEO_MODEL = "veo-3.1-fast";
-const AD_ASPECT_RATIO = "9:16"; // vertical — built for the feeds the buyers live in
+const WAVESPEED_MODEL = "wavespeed-ltx-2.3";
+// Aspect option (landscape "16:9" / portrait "9:16", default portrait). Threaded
+// through to every provider + the local worker. Flip to "landscape" for 16:9.
+const AD_ASPECT: AdAspect = DEFAULT_AD_ASPECT;
+const AD_ASPECT_RATIO: AspectRatio = aspectRatioFor(AD_ASPECT); // "9:16" | "16:9"
 const AD_DURATION_SECONDS = 8;
 
 // ----------------------------------------------------------------------------
@@ -152,79 +174,63 @@ export const run = internalAction({
     });
     await logEvent(ctx, runId, "rendered", `Rendering a video ad for ${data.company}…`);
 
-    // FREE video-worker path FIRST (Pexels stock + Edge-TTS + ffmpeg via the
-    // local worker). $0 — no Veo/fal billing. Unreachable ⇒ fast no-op, falls
-    // through to the Veo render below. Never blocks the run.
-    const free = await tryFreeWorker(ctx, runId, data, prompt);
-    if (free) {
-      await ctx.runMutation(internal.agents.creative.save, {
-        runId,
-        status: "done",
-        prompt,
-        model: free.model,
-        url: free.url,
-        storageId: free.storageId,
-      });
-      await logEvent(ctx, runId, "rendered", `Video ad ready (free ${free.model}).`);
-      return;
-    }
-
+    // PROVIDER CHAIN — pick the FIRST provider whose key/precondition is present,
+    // falling through gracefully on a miss. Setting ANY one key yields a video.
     try {
+      // 1) WaveSpeed LTX-2.3 (WAVESPEED_API_KEY) — plain HTTPS, works DEPLOYED.
+      //    Animates the gpt-image-1 ad poster (image-to-video). Needs the poster.
+      const ws = await tryWavespeed(data, prompt, AD_ASPECT_RATIO, AD_DURATION_SECONDS);
+      if (ws) {
+        await persistExternalVideo(ctx, runId, prompt, ws.model, ws.url);
+        return;
+      }
+
+      // 2 + 3) Veo (GOOGLE_API_KEY) → fal LTX (FAL_KEY), text-to-video, inside the
+      //    multi-provider client. Returns { url: undefined } (no throw) on a miss.
       const result = await generateAd({
         prompt,
         aspectRatio: AD_ASPECT_RATIO,
         durationSeconds: AD_DURATION_SECONDS,
       });
-
-      // lib/veo returns { url: undefined } (no throw) on poll-timeout / no video
-      // (e.g. fal $0 balance + worker down). GRACEFUL DEGRADE: mark "preview" —
-      // the panel calmly shows the static gpt-image-1 ad image (from adsmith) or a
-      // "video preview · queued" card. NEVER a red "failed" — the brief stays green.
-      if (!result.url) {
-        await ctx.runMutation(internal.agents.creative.save, {
-          runId,
-          status: "preview",
-          prompt,
-          model: result.model ?? VEO_MODEL,
-        });
-        await logEvent(
-          ctx,
-          runId,
-          "rendered",
-          "Video preview queued — showing the static ad while the free render warms up.",
-        );
+      if (result.url) {
+        await persistExternalVideo(ctx, runId, prompt, result.model ?? VEO_MODEL, result.url);
         return;
       }
 
-      // Persist the asset to Convex File Storage (SSRF-guarded, "use node").
-      // Storage failure never blocks the run — the external Veo URL is the fallback.
-      let storageId: Id<"_storage"> | undefined;
-      try {
-        const stored = await ctx.runAction(internal.storage.storeFromUrl, {
-          url: result.url,
+      // 4) FREE local Ken-Burns worker (VIDEO_WORKER_URL) — $0, localhost only, so
+      //    it's the LAST resort (it can't run from a deployed Convex action).
+      const free = await tryFreeWorker(ctx, runId, data, prompt);
+      if (free) {
+        await ctx.runMutation(internal.agents.creative.save, {
+          runId,
+          status: "done",
+          prompt,
+          model: free.model,
+          url: free.url,
+          storageId: free.storageId,
         });
-        storageId = stored.storageId;
-      } catch {
-        storageId = undefined;
+        await logEvent(ctx, runId, "rendered", `Video ad ready (free ${free.model}).`);
+        return;
       }
 
+      // 5) No provider configured/usable. GRACEFUL DEGRADE: mark "preview" — the
+      //    panel calmly shows the static gpt-image-1 ad image (from adsmith) or a
+      //    "video preview · queued" card. NEVER a red "failed" — the brief stays green.
       await ctx.runMutation(internal.agents.creative.save, {
         runId,
-        status: "done",
+        status: "preview",
         prompt,
         model: result.model ?? VEO_MODEL,
-        url: result.url,
-        storageId,
       });
       await logEvent(
         ctx,
         runId,
         "rendered",
-        `Video ad ready (${result.model ?? VEO_MODEL}).`,
+        "Video preview queued — showing the static ad while a render warms up.",
       );
     } catch {
-      // Render threw — GRACEFUL DEGRADE to the calm "preview" state (never red).
-      // The fan-in still ships the brief; the panel falls back to the static
+      // Any provider threw — GRACEFUL DEGRADE to the calm "preview" state (never
+      // red). The fan-in still ships the brief; the panel falls back to the static
       // gpt-image-1 ad image or a "video preview · queued" card.
       await ctx.runMutation(internal.agents.creative.save, {
         runId,
@@ -241,6 +247,59 @@ export const run = internalAction({
     }
   },
 });
+
+// ----------------------------------------------------------------------------
+// PROVIDER 1 — WaveSpeed LTX-2.3 (HTTPS, deploy-safe). Animates the gpt-image-1
+// ad poster into a short clip (image-to-video). Returns null (never throws) when
+// there's no poster, no WAVESPEED_API_KEY, or the render fails — the chain then
+// falls through to Veo / fal / the local worker. Aspect is threaded through.
+// ----------------------------------------------------------------------------
+async function tryWavespeed(
+  data: AdContext,
+  prompt: string,
+  ratio: AspectRatio,
+  durationSeconds: number,
+): Promise<{ url: string; model: string } | null> {
+  // image-to-video needs the already-generated poster image. None ⇒ skip.
+  if (!data.posterUrl) return null;
+  const url = await generateVideoFromImage({
+    imageUrl: data.posterUrl,
+    prompt,
+    aspect: ratio,
+    duration: durationSeconds,
+  });
+  return url ? { url, model: WAVESPEED_MODEL } : null;
+}
+
+// ----------------------------------------------------------------------------
+// Persist an externally-hosted clip (WaveSpeed / Veo / fal) to Convex File
+// Storage (SSRF-guarded, "use node"), then save the "done" creative row. Storage
+// failure never blocks the run — the external URL is the fallback.
+// ----------------------------------------------------------------------------
+async function persistExternalVideo(
+  ctx: ActionCtx,
+  runId: Id<"runs">,
+  prompt: string,
+  model: string,
+  url: string,
+): Promise<void> {
+  let storageId: Id<"_storage"> | undefined;
+  try {
+    const stored = await ctx.runAction(internal.storage.storeFromUrl, { url });
+    storageId = stored.storageId;
+  } catch {
+    storageId = undefined;
+  }
+  await ctx.runMutation(internal.agents.creative.save, {
+    runId,
+    status: "done",
+    prompt,
+    model,
+    url,
+    storageId,
+  });
+  await logEvent(ctx, runId, "rendered", `Video ad ready (${model}).`);
+}
 
 // ----------------------------------------------------------------------------
 // FREE video worker bridge. Builds short ad scenes from the

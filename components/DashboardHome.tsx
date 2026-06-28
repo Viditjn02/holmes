@@ -16,7 +16,7 @@
 // are a run roll-up grouped by intent (see deriveStats / deriveTrackStatus).
 // ============================================================================
 
-import { useMemo, type ReactElement, type ReactNode } from "react";
+import { useMemo, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Doc, Id } from "@/convex/_generated/dataModel";
@@ -126,6 +126,16 @@ const SPARK_BUCKETS = 12;
 const SPARK_WINDOW_MS = 24 * 60 * 60 * 1000; // last 24h
 const FEED_RUN_SLOTS = 6; // recent runs whose events we merge into the feed
 
+// Bottom fade mask — content slides out cleanly at the floating CommandBar's top
+// edge instead of bleeding behind it. Transparent through the bar zone, fading to
+// opaque just above it. Paired with the opaque CommandBar pill + bottom padding.
+const BAR_FADE_MASK: CSSProperties = {
+  WebkitMaskImage:
+    "linear-gradient(to top, transparent 0, transparent 4.5rem, #000 7.5rem)",
+  maskImage:
+    "linear-gradient(to top, transparent 0, transparent 4.5rem, #000 7.5rem)",
+};
+
 // ---------------------------------------------------------------------------
 export interface DashboardHomeProps {
   /** Fire the track like a quick-action (used for idle nodes / no latest run). */
@@ -180,14 +190,21 @@ export default function DashboardHome({
           (children). Cards are sized to fit ABOVE THE FOLD — no one should have
           to scroll to read the key plays. pb clears the floating CommandBar so
           nothing ever hides behind it. ─────────────────────────────────────── */}
-      <div className="col-scroll min-h-0 flex-1 overflow-y-auto px-7 pb-32 pt-5">
-        <header className="mb-3">
-          <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink/45">
-            GTM Command Center
-          </p>
-          <h1 className="mt-0.5 text-[21px] font-fig-headline leading-tight tracking-tight">
-            Pick a play.
-          </h1>
+      <div
+        className="col-scroll min-h-0 flex-1 overflow-y-auto px-7 pb-36 pt-5"
+        style={BAR_FADE_MASK}
+      >
+        <header className="mb-4">
+          {/* Soft pastel color-block behind the key header — one tasteful pop of
+              colour on an otherwise stark white landing (Figma sticky-note system). */}
+          <div className="inline-flex flex-col gap-0.5 rounded-lg bg-block-lime/60 px-4 py-3">
+            <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-ink/55">
+              GTM Command Center
+            </p>
+            <h1 className="text-[21px] font-fig-headline leading-tight tracking-tight text-ink">
+              Pick a play.
+            </h1>
+          </div>
         </header>
 
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -211,7 +228,7 @@ export default function DashboardHome({
       {/* ── right rail: COMPACT live-activity feed. Capped to a short fixed
           height (upper portion) so it reads as a glance-able ticker, never a
           long column (founder asked twice to shorten it). ────────────────── */}
-      <aside className="hidden w-[300px] shrink-0 border-l border-hairline bg-surface-soft/40 p-3 lg:block">
+      <aside className="hidden w-[300px] shrink-0 border-l border-hairline bg-canvas p-3 lg:block">
         <div className="flex max-h-[300px] flex-col overflow-hidden rounded-xl border border-hairline bg-canvas shadow-soft">
           <ActivityFeed runs={runs} />
         </div>
