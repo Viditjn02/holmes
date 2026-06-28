@@ -158,4 +158,17 @@ export default defineSchema({
     lastRunId: v.optional(v.id("runs")),
     createdAt: v.number(),
   }).index("by_active", ["active"]),
+
+  // In-house design generation (AI Ad Factories): from the brief + the buyers'
+  // own language, an OpenAI-backed generator produces a brand-consistent campaign
+  // landing page + ad copy. Brand-new code — inspired by open-design's prompting
+  // approach, not derived from its source.
+  designs: defineTable({
+    runId: v.id("runs"),
+    kind: v.string(), // "landing" | "ad_copy"
+    title: v.string(),
+    html: v.optional(v.string()), // generated landing-page markup
+    copy: v.optional(v.string()), // ad copy / headline variants
+    generatedAt: v.number(),
+  }).index("by_run", ["runId"]),
 });
