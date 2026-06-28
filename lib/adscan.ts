@@ -46,6 +46,13 @@ export interface ScanOpts {
   networks?: AdNetwork[];
   /** Hard cap on returned ads. Defaults to MAX_SCAN_ADS. */
   limit?: number;
+  /**
+   * Optional domain hint (the competitor's real product domain). When present it
+   * (a) disambiguates the Google ATC advertiser resolution so a fuzzy NAME match
+   * can't latch onto the wrong advertiser, and (b) tightens the post-scan
+   * advertiser-match filter so random (e.g. hiring-page) advertisers are dropped.
+   */
+  domain?: string;
 }
 
 const FETCH_TIMEOUT_MS = 12_000;
@@ -68,13 +75,14 @@ export async function scanAds(
   // Google ATC is the PRIMARY token-free network — default to all three.
   const networks = opts.networks ?? ["google", "meta", "tiktok"];
   const limit = Math.max(1, opts.limit ?? MAX_SCAN_ADS);
+  const domain = opts.domain?.trim() || undefined;
 
   const collected: ScannedAd[] = [];
 
   // --- Lane 0 + 1 + 2: primary lanes in parallel. Google ATC is the only one
   // that needs zero keys/browser, so it carries the no-key path on its own.
   const primary = await Promise.all([
-    networks.includes("google") ? scanGoogleATC(name, limit) : empty(),
+    networks.includes("google") ? scanGoogleATC(name, limit, domain) : empty(),
     networks.includes("tiktok") ? scanTikTokRadar(name, country, limit) : empty(),
     networks.includes("meta") ? scanMetaBrowser(name, country, limit) : empty(),
   ]);
@@ -94,7 +102,78 @@ export async function scanAds(
     collected.push(...(await scanMetaToken(name)));
   }
 
-  return dedupeAndCap(collected, limit);
+  // Drop ads whose advertiser CLEARLY doesn't match the intended competitor
+  // (name/domain similarity). This is what stops a fuzzy-resolved random
+  // advertiser (e.g. a hiring page) from reaching the gallery. Lenient by design:
+  // anything with plausible overlap — or no advertiser info — is kept.
+  const matched = collected.filter((ad) =>
+    advertiserMatches(ad.advertiser, name, domain),
+  );
+
+  return dedupeAndCap(matched, limit);
+}
+
+// ----------------------------------------------------------------------------
+// Advertiser-match guard. Normalizes the ad's advertiser and compares it against
+// the intended competitor's NAME and DOMAIN brand token. Containment in either
+// direction (or an exact short-token match) counts as a match; no advertiser
+// info is treated as a match (we never drop on missing data). Used to reject the
+// occasional wrong advertiser a fuzzy name→id resolution can latch onto.
+// ----------------------------------------------------------------------------
+function advertiserMatches(
+  advertiser: string | undefined,
+  name: string,
+  domain: string | undefined,
+): boolean {
+  const a = normToken(advertiser);
+  if (!a) return true; // no advertiser info → don't drop
+
+  const targets: string[] = [];
+  const n = normToken(name);
+  if (n) targets.push(n);
+  const brand = domainBrandToken(domain);
+  if (brand) targets.push(brand);
+  if (targets.length === 0) return true;
+
+  for (const t of targets) {
+    if (!t) continue;
+    if (a === t) return true;
+    // Require ≥3 chars for fuzzy containment so trivial substrings don't match.
+    if (t.length >= 3 && (a.includes(t) || t.includes(a))) return true;
+  }
+  return false;
+}
+
+/** Lowercase alphanumeric-only token (strips spaces/punctuation). */
+function normToken(value: string | undefined): string {
+  return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/** The brand token of a domain: "tealhq.com" → "tealhq", "simplify.jobs" → "simplify". */
+function domainBrandToken(domain: string | undefined): string {
+  if (!domain) return "";
+  const d = domain
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    .split("?")[0];
+  if (!d.includes(".")) return "";
+  return normToken(d.split(".")[0]);
+}
+
+/** Bare domain (no scheme/www/path) for exact mention checks. "" when not a domain. */
+function bareDomain(domain: string | undefined): string {
+  if (!domain) return "";
+  const d = domain
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    .split("?")[0];
+  return d.includes(".") ? d : "";
 }
 
 function empty(): Promise<ScannedAd[]> {
@@ -111,8 +190,12 @@ function empty(): Promise<ScannedAd[]> {
 // ----------------------------------------------------------------------------
 const GOOGLE_ATC_RPC = "https://adstransparency.google.com/anji/_/rpc";
 
-async function scanGoogleATC(advertiser: string, limit: number): Promise<ScannedAd[]> {
-  const arId = await resolveAdvertiserId(advertiser);
+async function scanGoogleATC(
+  advertiser: string,
+  limit: number,
+  domain?: string,
+): Promise<ScannedAd[]> {
+  const arId = await resolveAdvertiserId(advertiser, domain);
   if (!arId) return [];
 
   const fReq = JSON.stringify({
@@ -190,8 +273,15 @@ async function scanGoogleATC(advertiser: string, limit: number): Promise<Scanned
 }
 
 /** Resolve a brand name → advertiser id (AR…) via SearchSuggestions. Picks the
- *  best name match, breaking ties toward the largest ad-count band. Never throws. */
-async function resolveAdvertiserId(advertiser: string): Promise<string | null> {
+ *  best name match, breaking ties toward the largest ad-count band. When a domain
+ *  hint is given it strongly prefers the suggestion whose record mentions that
+ *  domain (or whose name aligns with the domain's brand token) — this defeats the
+ *  fuzzy-name failure mode where a random advertiser outscores the real one.
+ *  Never throws. */
+async function resolveAdvertiserId(
+  advertiser: string,
+  domain?: string,
+): Promise<string | null> {
   const query = advertiser.trim();
   if (!query) return null;
 
@@ -219,6 +309,8 @@ async function resolveAdvertiserId(advertiser: string): Promise<string | null> {
 
   const suggestions = isRecord(body) && Array.isArray(body["1"]) ? body["1"] : [];
   const want = query.toLowerCase();
+  const wantBrand = domainBrandToken(domain); // "" when no domain hint
+  const wantDomain = bareDomain(domain); // "" when no domain hint
   let best: { id: string; score: number } | null = null;
   for (const s of suggestions) {
     const inner = isRecord(s) ? asRecord(s["1"]) : undefined;
@@ -237,9 +329,31 @@ async function resolveAdvertiserId(advertiser: string): Promise<string | null> {
     else if (nm.startsWith(want) || want.startsWith(nm)) score += 1e9;
     else if (nm.includes(want) || want.includes(nm)) score += 1e6;
 
+    // DOMAIN-AWARE preference: the strongest signal of the RIGHT advertiser.
+    // (1) The suggestion record literally mentions the competitor's domain →
+    //     near-certain match (ATC often carries the verified advertiser domain).
+    if (wantDomain && recordMentions(inner, wantDomain)) score += 2e12;
+    // (2) The suggestion NAME aligns with the domain's brand token.
+    if (wantBrand) {
+      const nmt = normToken(name);
+      if (nmt && (nmt === wantBrand || nmt.includes(wantBrand) || wantBrand.includes(nmt))) {
+        score += 5e11;
+      }
+    }
+
     if (!best || score > best.score) best = { id, score };
   }
   return best?.id ?? null;
+}
+
+/** True when any string anywhere inside a record contains the needle (lowercased). */
+function recordMentions(rec: Record<string, unknown>, needle: string): boolean {
+  if (!needle) return false;
+  try {
+    return JSON.stringify(rec).toLowerCase().includes(needle);
+  } catch {
+    return false;
+  }
 }
 
 /** Strip the anti-JSON guard prefix Google RPC sometimes emits, then parse. */

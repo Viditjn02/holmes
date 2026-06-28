@@ -201,9 +201,13 @@ export const run = internalAction({
       competitors.length > 0 ? competitors : [{ name: target }];
 
     // STEP B — scan each rival across all 3 networks (cache-first, per rival).
+    // Pass the rival's DOMAIN so the advertiser resolves precisely (a fuzzy NAME
+    // match can otherwise latch onto the wrong — e.g. random hiring — advertiser).
     const perRival = await Promise.all(
       toScan.map((c) =>
-        scanCached(ctx, c.name, country, networks).catch(() => [] as ScannedAd[]),
+        scanCached(ctx, c.name, c.domain, country, networks).catch(
+          () => [] as ScannedAd[],
+        ),
       ),
     );
     const scanned: ScannedAd[] = perRival.flat();
@@ -287,12 +291,16 @@ export const run = internalAction({
 async function scanCached(
   ctx: ActionCtx,
   advertiser: string,
+  domain: string | undefined,
   country: string,
   networks: AdNetwork[],
 ): Promise<ScannedAd[]> {
   const name = advertiser.trim();
   if (!name) return [];
-  const cacheKey = `${slugify(name)}|${country}|${[...networks].sort().join(",")}`;
+  const domainHint = domain?.trim() || undefined;
+  // Domain is part of the cache key: it changes which advertiser resolves, so a
+  // name+domain scan must not collide with a name-only (or different-domain) scan.
+  const cacheKey = `${slugify(name)}|${domainHint ? slugify(domainHint) : "nodomain"}|${country}|${[...networks].sort().join(",")}`;
 
   const cached = await ctx
     .runQuery(internal.agents.adscout.getCache, { key: cacheKey })
@@ -303,7 +311,7 @@ async function scanCached(
 
   let scanned: ScannedAd[] = [];
   try {
-    scanned = await scanAds(name, { country, networks });
+    scanned = await scanAds(name, { country, networks, domain: domainHint });
   } catch {
     scanned = [];
   }

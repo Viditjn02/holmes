@@ -147,10 +147,6 @@ function brandKey(c: Competitor): string {
   return c.name.trim().toLowerCase();
 }
 
-function sameBrand(a: Competitor, b: Competitor): boolean {
-  return brandKey(a) === brandKey(b);
-}
-
 function dedupe(list: Competitor[]): Competitor[] {
   const seen = new Set<string>();
   const out: Competitor[] = [];
@@ -164,28 +160,53 @@ function dedupe(list: Competitor[]): Competitor[] {
   return out;
 }
 
-/** Deterministic seed set by category keyword — never empty. */
-function seedCompetitors(
+/** Lowercased haystack over the domain + firmographics for keyword matching. */
+function seedHaystack(
   domain: string,
   firmo: { name?: string; description?: string; industry?: string } | undefined,
-  cap: number,
-  self: string,
-): Competitor[] {
-  const haystack = [
-    domain,
-    firmo?.name ?? "",
-    firmo?.industry ?? "",
-    firmo?.description ?? "",
-  ]
+): string {
+  return [domain, firmo?.name ?? "", firmo?.industry ?? "", firmo?.description ?? ""]
     .join(" ")
     .toLowerCase();
+}
 
+/** The CATEGORY_SEEDS whose keywords match — no generic fallback (may be empty). */
+function matchCategorySeeds(haystack: string): Competitor[] {
   const matched: Competitor[] = [];
   for (const seed of CATEGORY_SEEDS) {
     if (seed.keywords.some((kw) => haystack.includes(kw))) {
       matched.push(...seed.competitors);
     }
   }
+  return matched;
+}
+
+/**
+ * NICHE-ACCURATE category seeds only (Teal/Simplify/Huntr… for the job category).
+ * Returns [] when no category keyword matches — used to REINFORCE the candidate
+ * pool with deterministic, on-niche rivals (never the broad GENERIC_SEED).
+ */
+function categorySeedCompetitors(
+  domain: string,
+  firmo: { name?: string; description?: string; industry?: string } | undefined,
+  cap: number,
+  self: string,
+): Competitor[] {
+  const matched = matchCategorySeeds(seedHaystack(domain, firmo));
+  if (matched.length === 0) return [];
+  return dedupe(matched)
+    .filter((c) => brandKey(c) !== self)
+    .slice(0, cap);
+}
+
+/** Deterministic seed set by category keyword — never empty (the ultimate net). */
+function seedCompetitors(
+  domain: string,
+  firmo: { name?: string; description?: string; industry?: string } | undefined,
+  cap: number,
+  self: string,
+): Competitor[] {
+  const matched = matchCategorySeeds(seedHaystack(domain, firmo));
   const pool = matched.length > 0 ? matched : [...GENERIC_SEED];
   return dedupe(pool)
     .filter((c) => brandKey(c) !== self)
@@ -193,7 +214,141 @@ function seedCompetitors(
 }
 
 // ----------------------------------------------------------------------------
-// PUBLIC: discoverCompetitors — domain → real advertising rivals. Never throws.
+// PRIMARY (LLM) — direct PRODUCT competitors only. The tightened prompt is the
+// first line of defense against same-INDUSTRY lookalike pollution (for a job/
+// resume tool: job boards, aggregators, career/hiring pages, staffing agencies,
+// ATSes). The buyer would use these tools INSTEAD of the target.
+// ----------------------------------------------------------------------------
+const PRIMARY_SYSTEM = [
+  "You are a competitive-intelligence analyst. Given a company, list its REAL,",
+  "currently-operating DIRECT PRODUCT competitors — tools a buyer would use INSTEAD",
+  "of the target, in the SAME product niche, solving the SAME core job.",
+  "EXCLUDE ENTIRELY (these are NOT competitors): job boards, job aggregators,",
+  "company career/hiring pages, staffing or recruiting agencies, applicant tracking",
+  "systems (ATS), and generic or unrelated SaaS.",
+  "Every competitor MUST be a distinct PRODUCT with its own real root product domain",
+  "(its marketing site — never a careers/jobs page). Prefer rivals that actively run",
+  "paid ads. No duplicates, and never the company itself.",
+].join(" ");
+
+async function llmDirectCompetitors(
+  target: string,
+  firmo: { name?: string; description?: string; industry?: string } | undefined,
+  cap: number,
+  self: string,
+): Promise<Competitor[]> {
+  try {
+    const r = await chatJSON<{ competitors?: Competitor[] }>({
+      system: PRIMARY_SYSTEM,
+      user:
+        `COMPANY: ${firmo?.name ?? target} (${target})\n` +
+        `WHAT IT DOES: ${firmo?.description ?? "(infer from the domain)"}\n` +
+        `CATEGORY: ${firmo?.industry ?? "(infer)"}\n` +
+        `Return up to ${cap} DIRECT PRODUCT competitors, each with a real product domain.`,
+      schemaHint:
+        '{ "competitors": [ { "name": string, "domain": string, "why": string } ] }',
+      temperature: 0.4,
+      maxTokens: 1200,
+    });
+    return dedupe((r?.competitors ?? []).filter((c) => c?.name?.trim())).filter(
+      (c) => brandKey(c) !== self,
+    );
+  } catch {
+    // no key / bad JSON → caller falls through to grounding + seed
+    return [];
+  }
+}
+
+// ----------------------------------------------------------------------------
+// GROUND — Orange Slice Ocean lookalikes. Collected SEPARATELY (NOT blended raw)
+// so they can be routed through the relevance filter below: same-INDUSTRY
+// neighbors (job boards, staffing) are exactly the pollution we must drop.
+// ----------------------------------------------------------------------------
+async function groundingCompetitors(
+  firmo: { industry?: string } | undefined,
+  cap: number,
+  self: string,
+): Promise<Competitor[]> {
+  if (!hasOrangeSliceKey()) return [];
+  try {
+    const look = await discoverCompanies({ keywords: firmo?.industry, limit: cap });
+    const out: Competitor[] = [];
+    for (const a of look) {
+      if (!a.company) continue;
+      const cand: Competitor = { name: a.company, domain: a.domain };
+      if (brandKey(cand) === self) continue;
+      out.push(cand);
+    }
+    return dedupe(out);
+  } catch {
+    return [];
+  }
+}
+
+// ----------------------------------------------------------------------------
+// FINAL LLM RELEVANCE FILTER — the "more filtering" pass. Over the assembled
+// candidate list (OpenAI + grounding + seed), keep ONLY genuine direct product
+// rivals in the same niche; drop job boards / aggregators / career-hiring pages /
+// staffing / ATS / generic SaaS. NEVER throws → on no-key / bad shape / failure
+// it returns the pre-filter list unchanged (we'd rather under-filter than nuke
+// real rivals). A legitimate empty keep-set is honored (caller falls back to the
+// niche seeds), which is how random hiring-page candidates get removed.
+// ----------------------------------------------------------------------------
+async function filterDirectCompetitors(
+  targetName: string,
+  targetWhat: string | undefined,
+  targetDomain: string,
+  candidates: Competitor[],
+): Promise<Competitor[]> {
+  if (candidates.length === 0) return candidates;
+  try {
+    const r = await chatJSON<{ keep?: unknown }>({
+      system:
+        "You are a competitive-intelligence analyst running a STRICT relevance filter. " +
+        "You get a TARGET product and a NUMBERED list of CANDIDATE companies. Return the " +
+        "indices of ONLY the candidates that are GENUINE DIRECT PRODUCT competitors of the " +
+        "target — a tool a buyer would choose INSTEAD of the target, solving the SAME core " +
+        "job in the SAME product niche. DROP anything that is not a direct product rival, " +
+        "especially: job boards, job aggregators, company career/hiring pages, staffing or " +
+        "recruiting agencies, applicant tracking systems (ATS), and generic or unrelated " +
+        "SaaS. Also drop the target itself. When in doubt, DROP it.",
+      user:
+        `TARGET: ${targetName} (${targetDomain})\n` +
+        `WHAT IT DOES: ${targetWhat ?? "(infer from the name/domain)"}\n\n` +
+        "CANDIDATES:\n" +
+        candidates
+          .map(
+            (c, i) =>
+              `${i}: ${c.name}${c.domain ? ` — ${c.domain}` : ""}${
+                c.why ? ` — ${c.why}` : ""
+              }`,
+          )
+          .join("\n") +
+        '\n\nReturn { "keep": [indices] } listing only the genuine direct competitors.',
+      schemaHint: '{ "keep": number[] }',
+      temperature: 0,
+      maxTokens: 300,
+    });
+    const raw = r?.keep;
+    if (!Array.isArray(raw)) return candidates; // shape miss → don't over-filter
+    const seen = new Set<number>();
+    const kept: Competitor[] = [];
+    for (const v of raw) {
+      const i = typeof v === "number" ? v : Number(v);
+      if (!Number.isInteger(i) || i < 0 || i >= candidates.length || seen.has(i)) {
+        continue;
+      }
+      seen.add(i);
+      kept.push(candidates[i]);
+    }
+    return kept; // may be empty (legit drop-all) → caller falls back to seeds
+  } catch {
+    return candidates; // no OpenAI key / bad JSON → pre-filter list
+  }
+}
+
+// ----------------------------------------------------------------------------
+// PUBLIC: discoverCompetitors — domain → real, DIRECT product rivals. Never throws.
 // ----------------------------------------------------------------------------
 export async function discoverCompetitors(
   domain: string,
@@ -205,61 +360,48 @@ export async function discoverCompetitors(
   const cap = Math.max(3, Math.min(opts.limit ?? 8, 12));
   const self = cleanDomain(target) ?? target.toLowerCase();
 
-  // Firmographics ground both the LLM prompt and the seed fallback.
+  // Firmographics ground the LLM prompts and the seed fallback.
   const firmo =
     opts.firmographics ?? (await enrichCompany(target).catch(() => undefined));
 
-  // 1) PRIMARY — the LLM knows the competitive set. Costs no new key.
-  let out: Competitor[] = [];
-  try {
-    const r = await chatJSON<{ competitors?: Competitor[] }>({
-      system:
-        "You are a competitive-intelligence analyst. Given a company, list its REAL, " +
-        "currently-operating DIRECT competitors — companies a buyer would evaluate as " +
-        "alternatives. Prefer rivals that actively run paid ads. Use real brand names + " +
-        "real root domains. No duplicates, and never the company itself.",
-      user:
-        `COMPANY: ${firmo?.name ?? target} (${target})\n` +
-        `WHAT IT DOES: ${firmo?.description ?? "(infer from the domain)"}\n` +
-        `CATEGORY: ${firmo?.industry ?? "(infer)"}\n` +
-        `Return up to ${cap} competitors.`,
-      schemaHint:
-        '{ "competitors": [ { "name": string, "domain": string, "why": string } ] }',
-      temperature: 0.5,
-      maxTokens: 1200,
-    });
-    out = dedupe((r?.competitors ?? []).filter((c) => c?.name?.trim())).filter(
-      (c) => brandKey(c) !== self,
-    );
-  } catch {
-    // no key / bad JSON → fall through to grounding + seed
+  // 1) PRIMARY — tightened LLM direct-competitor set. Costs no new key.
+  const primary = await llmDirectCompetitors(target, firmo, cap, self);
+
+  // 2) GROUND — Ocean lookalikes, collected SEPARATELY (not blended raw).
+  const grounding = await groundingCompetitors(firmo, cap, self);
+
+  // 2b) NICHE SEEDS — deterministic, on-niche rivals to reinforce the pool
+  //     (Teal/Simplify/Huntr… for the job category). Empty off-category.
+  const categorySeeds = categorySeedCompetitors(target, firmo, cap, self);
+
+  // Assemble the candidate pool from all three niche-aware sources.
+  const candidates = dedupe([...primary, ...grounding, ...categorySeeds]).filter(
+    (c) => brandKey(c) !== self,
+  );
+
+  // Nothing surfaced at all → ultimate deterministic safety net (never empty).
+  if (candidates.length === 0) {
+    return seedCompetitors(target, firmo, cap, self);
   }
 
-  // 2) GROUND — Ocean lookalike enrichment (additive, key-gated, deduped).
-  if (hasOrangeSliceKey() && out.length < cap) {
-    try {
-      const look = await discoverCompanies({
-        keywords: firmo?.industry,
-        limit: cap,
-      });
-      for (const a of look) {
-        if (!a.company) continue;
-        const cand: Competitor = { name: a.company, domain: a.domain };
-        if (brandKey(cand) === self) continue;
-        if (!out.some((c) => sameBrand(c, cand))) out.push(cand);
-        if (out.length >= cap) break;
-      }
-    } catch {
-      // additive only
-    }
-  }
+  // 3) FINAL RELEVANCE FILTER — drop everything that isn't a genuine direct rival.
+  const filtered = await filterDirectCompetitors(
+    firmo?.name ?? target,
+    firmo?.description,
+    self,
+    candidates,
+  );
 
-  // 3) FALLBACK — deterministic seed so the pipeline is never empty.
-  if (out.length === 0) {
-    out = seedCompetitors(target, firmo, cap, self);
-  }
+  // Safety net: if the filter legitimately dropped everything, prefer the niche
+  // seeds (accurate by construction), else the pre-filter candidates — never empty.
+  const resolved =
+    filtered.length > 0
+      ? filtered
+      : categorySeeds.length > 0
+        ? categorySeeds
+        : candidates;
 
-  return dedupe(out).slice(0, cap);
+  return dedupe(resolved).slice(0, cap);
 }
 
 // ----------------------------------------------------------------------------
