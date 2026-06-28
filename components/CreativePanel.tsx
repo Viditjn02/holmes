@@ -3,6 +3,7 @@
 import { useQuery } from "convex/react";
 import { api } from "@/convex/_generated/api";
 import type { Id } from "@/convex/_generated/dataModel";
+import VideoAspectToggle from "./VideoAspectToggle";
 
 // ============================================================================
 // CreativePanel — the generated video ad.
@@ -49,16 +50,21 @@ export default function CreativePanel({ runId }: CreativePanelProps) {
             {creative?.model ? `Rendered with ${creative.model}` : "Video creative"}
           </p>
         </div>
-        {status && (
-          <span
-            className={`caption inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 ${
-              ready ? "bg-block-mint text-ink" : "bg-surface-soft text-ink"
-            }`}
-          >
-            {ready && <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />}
-            {pillLabel}
-          </span>
-        )}
+        <div className="flex items-center gap-3">
+          {/* Portrait/Landscape sits HERE — where the video actually is — not on
+              the dashboard. Drives the aspect of the next render. */}
+          <VideoAspectToggle />
+          {status && (
+            <span
+              className={`caption inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 ${
+                ready ? "bg-block-mint text-ink" : "bg-surface-soft text-ink"
+              }`}
+            >
+              {ready && <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />}
+              {pillLabel}
+            </span>
+          )}
+        </div>
       </header>
 
       <div className="relative aspect-video w-full bg-surface-soft">

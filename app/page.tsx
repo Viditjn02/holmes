@@ -14,7 +14,6 @@ import DashboardHome from "@/components/DashboardHome";
 import QuickActions from "@/components/QuickActions";
 import CommandBar from "@/components/CommandBar";
 import EmailDesigner from "@/components/EmailDesigner";
-import VideoAspectToggle from "@/components/VideoAspectToggle";
 import { sendMessageRef } from "@/components/chatApi";
 import { type Capability, type Intent, spawnsRun } from "@/lib/contract";
 import { cn } from "@/lib/utils";
@@ -442,7 +441,6 @@ function DashboardSurface({
           INTERCEPT · GTM Command Center
         </p>
         <div className="flex items-center gap-2">
-          <VideoAspectToggle />
           <AutonomyToggle />
           <TargetChip value={targetUrl} onSave={onSaveTarget} />
         </div>
