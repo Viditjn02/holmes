@@ -117,19 +117,23 @@ export function Blip({ state = "idle", size = 40, className, gaze = null, glow =
   // the same cadence. Random `animation-delay` is the cheap, compositor-only way
   // to vary cadence without JS per-frame work. useMemo (not useState) → no
   // re-render; SSR-stable enough (decorative only).
-  const phase = useMemo(
-    () => ({
-      blink: -(Math.random() * 6).toFixed(2),
-      glance: -(Math.random() * 8).toFixed(2),
-      attract: -(Math.random() * 9).toFixed(2),
-    }),
-    [],
-  );
+  // SSR-SAFE: fixed "0" delays on the server + the first client render so
+  // hydration matches; randomize ONLY after mount (client-only) so instances
+  // still vary cadence. (Math.random() during render mismatches server↔client.)
+  const [phase, setPhase] = useState({ blink: "0", glance: "0", attract: "0" });
+  useEffect(() => {
+    setPhase({
+      blink: (-(Math.random() * 6)).toFixed(2),
+      glance: (-(Math.random() * 8)).toFixed(2),
+      attract: (-(Math.random() * 9)).toFixed(2),
+    });
+  }, []);
 
   return (
     <span
       data-blip-state={state}
       data-blip-tracking={tracking ? "1" : undefined}
+      suppressHydrationWarning
       className={["blip-sprite", className].filter(Boolean).join(" ")}
       style={{
         width: size,
