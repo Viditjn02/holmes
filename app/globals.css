@@ -1,73 +1,210 @@
+/* ============================================================================
+   INTERCEPT — Figma editorial restyle, dual-theme CSS variables.
+
+   One token set, two themes. Channels are space-separated RGB so Tailwind's
+   `rgb(var(--x) / <alpha-value>)` colours + opacity modifiers work everywhere.
+   Default LIGHT (white canvas · black ink · pastel blocks); NIGHT derives from
+   block-navy. The @keyframes / .animate-* / .scan-track / .live-dot / .col-*
+   utilities are kept — only recoloured to ink + block pastels + success.
+   ============================================================================ */
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* ============================================================================
-   INTERCEPT — autonomous outbound GTM. Dark, premium, Linear/Attio-grade.
-   Theme tokens live in tailwind.config.ts (ink / panel / line / accent / good)
-   and are mirrored as CSS vars below for raw rgba math.
-   ============================================================================ */
+@layer base {
+  /* ── LIGHT (default Figma): white canvas · black ink · pastel blocks ──────── */
+  :root {
+    color-scheme: light;
 
-:root {
-  color-scheme: dark;
-  --ink: #0a0a0b;
-  --panel: #141417;
-  --panel-2: #18181c;
-  --line: #26262b;
-  --accent: #ff6a2b;
-  --good: #34d399;
+    /* monochrome chrome */
+    --canvas: 255 255 255; /* #ffffff */
+    --ink: 0 0 0; /* #000000 */
+    --primary: 0 0 0; /* #000000 — black pill */
+    --on-primary: 255 255 255; /* #ffffff */
+    --inverse-canvas: 0 0 0; /* #000000 — marquee strip / footer-dark */
+    --inverse-ink: 255 255 255; /* #ffffff */
+    --on-inverse-soft: 255 255 255;
 
-  --text: #ededf0;
-  --text-dim: rgba(237, 237, 240, 0.55);
-  --text-faint: rgba(237, 237, 240, 0.38);
+    /* surfaces & hairlines */
+    --surface-soft: 247 247 245; /* #f7f7f5 */
+    --hairline: 230 230 230; /* #e6e6e6 */
+    --hairline-soft: 241 241 241; /* #f1f1f1 */
+
+    /* pastel color-blocks (brand-constant) */
+    --block-lime: 220 238 177; /* #dceeb1 */
+    --block-lilac: 197 176 244; /* #c5b0f4 */
+    --block-cream: 244 236 214; /* #f4ecd6 */
+    --block-pink: 239 212 212; /* #efd4d4 */
+    --block-mint: 200 230 205; /* #c8e6cd */
+    --block-coral: 243 201 182; /* #f3c9b6 */
+    --block-navy: 31 29 61; /* #1f1d3d */
+
+    /* accent + semantic (scarce) */
+    --accent-magenta: 255 61 139; /* #ff3d8b — ONE promo CTA per page */
+    --success: 30 166 74; /* #1ea64a — glyph fill only */
+    --scrim: 0 0 0; /* #000000 — use rgb(var(--scrim)/0.6) behind modals */
+
+    /* radii (DESIGN `rounded`) */
+    --radius-xs: 2px;
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 24px;
+    --radius-xl: 32px;
+    --radius-pill: 50px;
+    --radius-full: 9999px;
+
+    /* spacing (DESIGN `spacing`, 8px base) */
+    --space-hair: 1px;
+    --space-xxs: 4px;
+    --space-xs: 8px;
+    --space-sm: 12px;
+    --space-md: 16px;
+    --space-lg: 24px;
+    --space-xl: 32px;
+    --space-xxl: 48px;
+    --space-section: 96px;
+  }
+
+  /* ── NIGHT: derived from block-navy #1f1d3d + inverse-canvas/inverse-ink ──── */
+  /* Applies via the toggle's `.dark` class OR a server-set [data-theme="dark"]. */
+  .dark,
+  [data-theme="dark"] {
+    color-scheme: dark;
+
+    /* chrome inverts: white ink on a deep-navy canvas; primary becomes a white pill */
+    --canvas: 21 20 42; /* #15142a — navy darkened (the page ground) */
+    --ink: 255 255 255; /* inverse-ink */
+    --primary: 255 255 255; /* white pill */
+    --on-primary: 31 29 61; /* #1f1d3d navy text on the white pill */
+    --inverse-canvas: 255 255 255; /* white strip in dark mode */
+    --inverse-ink: 21 20 42; /* #15142a navy text on the white strip */
+    --on-inverse-soft: 255 255 255;
+
+    /* surface-soft IS the navy (raised tiles lift off the darker canvas) */
+    --surface-soft: 31 29 61; /* #1f1d3d */
+    --hairline: 52 50 79; /* #34324f */
+    --hairline-soft: 38 35 64; /* #262340 */
+
+    /* pastels stay constant — they read as poster panels on the navy ground.
+       Only block-navy is nudged lighter so a navy SECTION still lifts off canvas. */
+    --block-navy: 42 39 71; /* #2a2747 */
+
+    /* accent / semantic unchanged */
+  }
+
+  /* base elements ----------------------------------------------------------- */
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: rgb(var(--canvas));
+    color: rgb(var(--ink));
+    /* figmaSans → Inter (var set by next/font in layout.tsx). See app/fonts.ts. */
+    font-family: var(--font-figma-sans), "SF Pro Display", system-ui, -apple-system,
+      "Segoe UI", Helvetica, Arial, sans-serif;
+    /* DESIGN enables OpenType kern across every role */
+    font-feature-settings: "kern" 1;
+    font-kerning: normal;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  /* DESIGN selection: keep it monochrome (no orange). */
+  ::selection {
+    background: rgb(var(--ink) / 0.12);
+    color: rgb(var(--ink));
+  }
 }
 
-* {
-  box-sizing: border-box;
-}
+@layer components {
+  /* ── Signature color-block section: full-content-width pastel poster panel.
+     Flat (NO shadow) — the colour IS the depth. One per viewport; let white
+     canvas separate two blocks. Below 768px corners drop for a full-bleed poster.
+     Usage: <section class="color-block bg-block-lime"> … </section>          */
+  .color-block {
+    border-radius: var(--radius-lg);
+    padding: var(--space-xxl);
+    box-shadow: none; /* never shadow a color block */
+  }
+  @media (max-width: 768px) {
+    .color-block {
+      border-radius: 0;
+      padding: var(--space-xl);
+    }
+  }
 
-html,
-body {
-  padding: 0;
-  margin: 0;
-  background: var(--ink);
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
-    Helvetica, Arial, sans-serif;
-  font-feature-settings: "cv02", "cv03", "cv04", "ss01";
-  -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
-}
+  /* ── Mono taxonomy labels — eyebrows & captions ONLY, always uppercase.
+     (figmaMono is a taxonomy tool, never a reading typeface.)                */
+  .eyebrow {
+    font-family: var(--font-figma-mono), "SF Mono", Menlo, monospace;
+    font-size: 18px;
+    line-height: 1.28;
+    letter-spacing: 0.54px;
+    text-transform: uppercase;
+    font-weight: 400;
+  }
+  .caption {
+    font-family: var(--font-figma-mono), "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    line-height: 1;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    font-weight: 400;
+  }
 
-body {
-  min-height: 100vh;
-  background:
-    radial-gradient(900px 520px at 12% -12%, rgba(255, 106, 43, 0.10), transparent 60%),
-    radial-gradient(820px 620px at 100% -4%, rgba(52, 211, 153, 0.06), transparent 55%),
-    var(--ink);
-  background-attachment: fixed;
-}
+  /* ── Pills: the ONLY CTA shape. Icon buttons are circles. ────────────────── */
+  .pill {
+    border-radius: var(--radius-pill);
+  }
+  .btn-primary {
+    border-radius: var(--radius-pill);
+    background: rgb(var(--primary));
+    color: rgb(var(--on-primary));
+    padding: 10px 20px;
+    font-weight: 480;
+    letter-spacing: -0.1px;
+  }
+  .btn-secondary {
+    border-radius: var(--radius-pill);
+    background: rgb(var(--canvas));
+    color: rgb(var(--ink));
+    padding: 8px 18px 10px; /* asymmetric — optically centers the type in the pill */
+    font-weight: 480;
+    letter-spacing: -0.1px;
+  }
+  .icon-btn {
+    border-radius: var(--radius-full);
+    height: 40px;
+    width: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgb(var(--surface-soft));
+    color: rgb(var(--ink));
+  }
 
-::selection {
-  background: rgba(255, 106, 43, 0.3);
-  color: #fff;
-}
-
-/* thin custom scrollbar */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: #2c2c33;
-  border-radius: 999px;
-  border: 2px solid var(--ink);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #3a3a42;
+  /* ── Input: focus is a ring, never a fill change. ────────────────────────── */
+  .text-input {
+    background: rgb(var(--canvas));
+    color: rgb(var(--ink));
+    border: 1px solid rgb(var(--hairline));
+    border-radius: var(--radius-md);
+    padding: 12px 14px;
+  }
+  .text-input:focus,
+  .text-input:focus-within {
+    outline: none;
+    box-shadow: 0 0 0 2px rgb(var(--ink) / 0.18);
+  }
 }
 
 /* tabular numerals helper */
@@ -76,90 +213,122 @@ body {
   letter-spacing: -0.01em;
 }
 
-/* ----------------------------------------------------------------------------
-   Surfaces
-   ---------------------------------------------------------------------------- */
-
-.glass {
-  background: linear-gradient(180deg, rgba(20, 20, 23, 0.92), rgba(15, 15, 18, 0.86));
-  backdrop-filter: blur(12px);
+/* thin custom scrollbar — neutral hairline on the canvas ground */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
 }
-
-.card {
-  background: linear-gradient(180deg, rgba(22, 22, 26, 0.9), rgba(16, 16, 19, 0.9));
-  border: 1px solid var(--line);
-  border-radius: 16px;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
-
-.card-hover {
-  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--hairline));
+  border-radius: 999px;
+  border: 2px solid rgb(var(--canvas));
 }
-.card-hover:hover {
-  border-color: rgba(255, 106, 43, 0.35);
-  transform: translateY(-2px);
-  box-shadow: 0 12px 40px -16px rgba(0, 0, 0, 0.7);
-}
-
-.hairline {
-  border-color: var(--line);
-}
-
-/* the grain/grid backdrop for hero sections */
-.grid-bg {
-  background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-  background-size: 44px 44px;
-  -webkit-mask-image: radial-gradient(closest-side, #000 60%, transparent);
-  mask-image: radial-gradient(closest-side, #000 60%, transparent);
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--ink) / 0.3);
 }
 
 /* ----------------------------------------------------------------------------
-   Animations
+   Animations (recoloured to ink + success — no orange/green gradients)
    ---------------------------------------------------------------------------- */
 
 @keyframes intercept-fade-up {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @keyframes intercept-scale-in {
-  from { opacity: 0; transform: scale(0.97); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 @keyframes intercept-drawer-in {
-  from { opacity: 0; transform: translateX(24px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 @keyframes intercept-row-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @keyframes intercept-pulse-ring {
-  0% { box-shadow: 0 0 0 0 rgba(255, 106, 43, 0.45); }
-  70% { box-shadow: 0 0 0 12px rgba(255, 106, 43, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(255, 106, 43, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgb(var(--ink) / 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 12px rgb(var(--ink) / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(var(--ink) / 0);
+  }
 }
 @keyframes intercept-shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 @keyframes intercept-scan {
-  0% { transform: translateX(-110%); }
-  100% { transform: translateX(110%); }
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(110%);
+  }
 }
 @keyframes intercept-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.25; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
 }
 @keyframes intercept-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 @keyframes intercept-skeleton {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
 }
 @keyframes intercept-ping-soft {
-  75%, 100% { transform: scale(2); opacity: 0; }
+  75%,
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
 }
 
 .animate-fade-up {
@@ -184,7 +353,7 @@ body {
   animation: intercept-spin 0.9s linear infinite;
 }
 
-/* shimmering scan line used inside a running tile's progress track */
+/* shimmering scan line used inside a running tile's progress track (ink, not orange) */
 .scan-track {
   position: relative;
   overflow: hidden;
@@ -194,13 +363,20 @@ body {
   position: absolute;
   inset: 0;
   width: 40%;
-  background: linear-gradient(90deg, transparent, rgba(255, 106, 43, 0.7), transparent);
+  background: linear-gradient(90deg, transparent, rgb(var(--ink) / 0.55), transparent);
   animation: intercept-scan 1.2s ease-in-out infinite;
 }
 
-/* shimmering text for headline accents */
+/* shimmering text for headline accents (monochrome ink sweep) */
 .text-shimmer {
-  background: linear-gradient(90deg, #ededf0 0%, #ffffff 20%, var(--accent) 50%, #ffffff 80%, #ededf0 100%);
+  background: linear-gradient(
+    90deg,
+    rgb(var(--ink) / 0.65) 0%,
+    rgb(var(--ink)) 20%,
+    rgb(var(--ink) / 0.45) 50%,
+    rgb(var(--ink)) 80%,
+    rgb(var(--ink) / 0.65) 100%
+  );
   background-size: 200% auto;
   -webkit-background-clip: text;
   background-clip: text;
@@ -208,13 +384,13 @@ body {
   animation: intercept-shimmer 4s linear infinite;
 }
 
-/* skeleton shimmer block */
+/* skeleton shimmer block (ink-tinted on the canvas) */
 .skeleton {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.04) 25%,
-    rgba(255, 255, 255, 0.08) 37%,
-    rgba(255, 255, 255, 0.04) 63%
+    rgb(var(--ink) / 0.04) 25%,
+    rgb(var(--ink) / 0.08) 37%,
+    rgb(var(--ink) / 0.04) 63%
   );
   background-size: 200% 100%;
   animation: intercept-skeleton 1.4s ease-in-out infinite;

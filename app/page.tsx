@@ -35,7 +35,7 @@ export default function Home() {
   };
 
   return (
-    <main className="flex h-[100dvh] w-full overflow-hidden">
+    <main className="flex h-[100dvh] w-full overflow-hidden bg-canvas text-ink">
       <PanelBoundary label="Loading conversations…">
         <ConversationSidebar
           activeId={conversationId}

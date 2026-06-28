@@ -28,6 +28,7 @@ import type { ExaThread } from "../../lib/exa";
 import { chatJSON } from "../../lib/openai";
 import { MAX_TREND_QUERIES } from "../../lib/contract";
 import type { TrendHit } from "../../lib/contract";
+import { keyFor } from "../../lib/knowledge";
 
 const MAX_TRENDS = 6; // how many scored trends to keep on the board
 const RESULTS_PER_TOPIC = 4;
@@ -105,8 +106,25 @@ export const run = internalAction({
     const icp = brief?.icp?.trim() ?? "";
     const positioning = brief?.positioning?.trim() ?? "";
 
+    // Compounding loop: read what prior runs learned about this market so topic
+    // derivation builds on accumulated trend knowledge. Graceful on a first run.
+    let learned = "";
+    try {
+      const k = await ctx.runAction(internal.knowledge.queryContext, {
+        query: positioning || company,
+        entityType: "company",
+        entityKey: keyFor(runDoc),
+        maxBytes: 8192,
+      });
+      if (k.available) {
+        learned = `\n\nWHAT WE'VE LEARNED (prior runs):\n${k.context}`;
+      }
+    } catch {
+      learned = "";
+    }
+
     // 1. derive market topics to scan (LLM, with deterministic fallback).
-    const topics = await deriveTopics(company, icp, positioning);
+    const topics = await deriveTopics(company, icp, positioning, learned);
 
     // 2. scan each topic for live conversation (Exa → free HN/Reddit fallback).
     const settled = await Promise.allSettled(
@@ -178,6 +196,7 @@ async function deriveTopics(
   company: string,
   icp: string,
   positioning: string,
+  learned = "",
 ): Promise<string[]> {
   const fallback = fallbackTopics(company, icp, positioning);
   if (!company && !icp && !positioning) return fallback;
@@ -185,7 +204,8 @@ async function deriveTopics(
   try {
     const result = await chatJSON<{ topics?: string[] }>({
       system:
-        "You are a social-media trend scout. Given a company's market, output the search topics whose LIVE discussion would make the best viral content hooks for that company. Return concrete, currently-relevant topics — not the company name itself.",
+        "You are a social-media trend scout. Given a company's market, output the search topics whose LIVE discussion would make the best viral content hooks for that company. Return concrete, currently-relevant topics — not the company name itself." +
+        learned,
       user: `Company: ${company || "(unknown)"}\nICP: ${icp || "(unknown)"}\nPositioning: ${
         positioning || "(unknown)"
       }\n\nReturn ${MAX_TREND_QUERIES} short trending search topics for this market.`,

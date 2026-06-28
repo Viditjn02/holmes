@@ -38,6 +38,7 @@ import {
 import { findContact, hasFiberKey } from "../../lib/fiber";
 import { findSignal } from "../../lib/signals";
 import { guessEmailWithMx } from "../enrich/emailGuess";
+import { keyFor } from "../../lib/knowledge";
 
 const DEFAULT_PERSONAS = [
   "Head of Growth",
@@ -63,7 +64,29 @@ export const run = internalAction({
     );
     if (!runDoc) throw new Error(`sourcer: run ${runId} not found`);
 
-    const brief = await buildBrief(ctx, runDoc);
+    const baseBrief = await buildBrief(ctx, runDoc);
+
+    // Compounding loop: read what prior runs learned about this ICP so prospect
+    // sourcing builds on accumulated target knowledge. Graceful on a first run —
+    // we fold it into the brief's description, which feeds the sourcing LLM.
+    let brief = baseBrief;
+    try {
+      const k = await ctx.runAction(internal.knowledge.queryContext, {
+        query: baseBrief.icp,
+        entityType: "icp",
+        entityKey: keyFor(runDoc),
+        maxBytes: 8192,
+      });
+      if (k.available) {
+        brief = {
+          ...baseBrief,
+          description: `${baseBrief.description ?? ""}\n\nWHAT WE'VE LEARNED (prior runs):\n${k.context}`.trim(),
+        };
+      }
+    } catch {
+      brief = baseBrief;
+    }
+
     const personas =
       brief.personas && brief.personas.length > 0 ? brief.personas : DEFAULT_PERSONAS;
 

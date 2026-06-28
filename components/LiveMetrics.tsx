@@ -34,12 +34,12 @@ interface MetricSpec {
 
 function MetricStat({ spec }: { spec: MetricSpec }) {
   return (
-    <div className="flex flex-col gap-1 rounded-xl border border-line/70 glass px-3 py-2.5">
-      <span className="text-[10px] font-medium uppercase tracking-wide text-white/40">
+    <div className="flex flex-col gap-1 rounded-md border border-hairline bg-surface-soft px-3 py-2.5">
+      <span className="caption text-ink/50">
         {spec.label}
       </span>
       <span
-        className={`text-2xl font-semibold tabular-nums leading-none ${spec.accent}`}
+        className={`text-2xl font-fig-headline tabular-nums leading-none ${spec.accent}`}
       >
         {spec.value}
       </span>
@@ -89,35 +89,35 @@ export default function LiveMetrics({ runId }: { runId?: Id<"runs"> }) {
       label: "Runs started",
       value: runsStarted,
       event: "swarm_runs_started",
-      accent: "text-white",
+      accent: "text-ink",
     },
     {
       key: "threads",
       label: "Threads found",
       value: threadsFound,
       event: "swarm_threads_found",
-      accent: "text-accent",
+      accent: "text-ink",
     },
     {
       key: "approvals",
       label: "Replies approved",
       value: approvals,
       event: "swarm_reply_approved",
-      accent: "text-good",
+      accent: "text-success",
     },
   ];
 
   return (
     <section className="w-full">
       <div className="mb-2.5 flex items-center gap-2">
-        <span className="relative flex h-2 w-2">
-          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent/70" />
-          <span className="relative inline-flex h-2 w-2 rounded-full bg-accent" />
+        <span className="relative flex h-2 w-2 text-success">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/70" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-success" />
         </span>
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-white/55">
+        <h3 className="caption text-ink/60">
           Live analytics
         </h3>
-        <span className="ml-auto text-[10px] font-medium uppercase tracking-wide text-white/30">
+        <span className="caption ml-auto text-ink/40">
           PostHog
         </span>
       </div>

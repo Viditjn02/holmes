@@ -26,7 +26,7 @@ import { internalAction, internalMutation, internalQuery } from "../_generated/s
 import type { ActionCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
-import { scanAds } from "../../lib/adscan";
+import { scanAds, enrichTopAds } from "../../lib/adscan";
 import {
   MAX_SCAN_ADS,
   SCALING_MIN_DAYS,
@@ -267,6 +267,18 @@ async function scoreAds(advertiser: string, ads: ScannedAd[]): Promise<ScannedAd
     scalingSignal: ad.status === "active" && (ad.daysRunning ?? 0) >= SCALING_MIN_DAYS,
   }));
 
+  // Supadata enrichment (additive, free-tier-disciplined, never throws): grounds
+  // the winning-angle scoring in the competitor's ACTUAL landing copy + top video
+  // transcript. Empty map without a key / on rate-limit → prompt is unchanged.
+  let enrichment: Map<number, { landingCopy?: string; videoScript?: string }> =
+    new Map();
+  try {
+    enrichment = await enrichTopAds(withSignal);
+  } catch {
+    enrichment = new Map();
+  }
+  const hasGrounding = enrichment.size > 0;
+
   let byIndex: Map<number, { scores: AdScores; winningAngle?: string }> | null = null;
   try {
     const result = await chatJSON<{
@@ -283,19 +295,29 @@ async function scoreAds(advertiser: string, ads: ScannedAd[]): Promise<ScannedAd
       system: SCORE_SYSTEM_PROMPT,
       user: JSON.stringify({
         advertiser,
-        ads: withSignal.map((ad, i) => ({
-          i,
-          platform: ad.platform,
-          network: ad.network,
-          headline: ad.headline ?? "",
-          text: ad.text.slice(0, 600),
-          cta: ad.cta ?? "",
-          daysRunning: ad.daysRunning,
-          status: ad.status,
-          engagement: ad.engagement,
-        })),
+        ads: withSignal.map((ad, i) => {
+          const extra = enrichment.get(i);
+          return {
+            i,
+            platform: ad.platform,
+            network: ad.network,
+            headline: ad.headline ?? "",
+            text: ad.text.slice(0, 600),
+            cta: ad.cta ?? "",
+            daysRunning: ad.daysRunning,
+            status: ad.status,
+            engagement: ad.engagement,
+            // NEW grounding context — only present for the top ad(s) Supadata
+            // could enrich; omitted entirely otherwise so the prompt is unchanged.
+            ...(extra?.landingCopy ? { landingCopy: extra.landingCopy } : {}),
+            ...(extra?.videoScript ? { videoScript: extra.videoScript } : {}),
+          };
+        }),
         instructions:
-          'Return STRICT JSON {"scored":[{"i":number,"hook":0-100,"clarity":0-100,"cta":0-100,"quality":0-100,"engagement":0-100,"winningAngle":string}]} — exactly one entry per input ad, same i.',
+          'Return STRICT JSON {"scored":[{"i":number,"hook":0-100,"clarity":0-100,"cta":0-100,"quality":0-100,"engagement":0-100,"winningAngle":string}]} — exactly one entry per input ad, same i.' +
+          (hasGrounding
+            ? " Some ads include landingCopy (the live landing page) and/or videoScript (the top video ad's transcript) — when present, ground winningAngle in those ACTUAL words, not guesses."
+            : ""),
       }),
       temperature: 0.2,
       maxTokens: 1800,

@@ -40,8 +40,8 @@ export function ResizableHandle({
   return (
     <PanelResizeHandle
       className={cn(
-        "group relative flex w-px items-center justify-center bg-line/70 outline-none transition-colors",
-        "data-[resize-handle-state=hover]:bg-accent/60 data-[resize-handle-state=drag]:bg-accent",
+        "group relative flex w-px items-center justify-center bg-hairline outline-none transition-colors",
+        "data-[resize-handle-state=hover]:bg-ink/30 data-[resize-handle-state=drag]:bg-ink",
         "after:absolute after:inset-y-0 after:left-1/2 after:w-3 after:-translate-x-1/2",
         className,
       )}
@@ -50,13 +50,13 @@ export function ResizableHandle({
       {withHandle && (
         <span
           className={cn(
-            "z-10 flex h-8 w-3 items-center justify-center rounded-full border border-line bg-panel",
+            "z-10 flex h-8 w-3 items-center justify-center rounded-full border border-hairline bg-canvas",
             "opacity-0 transition-opacity duration-200 group-hover:opacity-100",
             "group-data-[resize-handle-state=drag]:opacity-100",
           )}
           aria-hidden
         >
-          <svg viewBox="0 0 6 16" fill="none" className="h-3 w-1.5 text-white/40">
+          <svg viewBox="0 0 6 16" fill="none" className="h-3 w-1.5 text-ink">
             <circle cx="1" cy="3" r="1" fill="currentColor" />
             <circle cx="1" cy="8" r="1" fill="currentColor" />
             <circle cx="1" cy="13" r="1" fill="currentColor" />

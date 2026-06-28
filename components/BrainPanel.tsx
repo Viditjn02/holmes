@@ -67,23 +67,23 @@ export default function BrainPanel({ company }: BrainPanelProps) {
   if (!answer) return null;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel/60">
-      <header className="flex items-center gap-2 border-b border-line px-5 py-3">
+    <section className="overflow-hidden rounded-lg border border-hairline bg-canvas">
+      <header className="flex items-center gap-2 border-b border-hairline px-5 py-3">
         <span aria-hidden className="text-base leading-none">
           🧠
         </span>
         <div>
-          <h3 className="text-sm font-semibold text-zinc-100">
+          <h3 className="text-sm font-fig-headline text-ink">
             What the brain already knows about this market
           </h3>
-          <p className="text-[11px] text-zinc-500">
+          <p className="caption mt-0.5 text-ink/50">
             Compounding context from prior INTERCEPT runs
           </p>
         </div>
       </header>
 
       <div className="px-5 py-4">
-        <p className="whitespace-pre-wrap text-sm leading-relaxed text-zinc-300">
+        <p className="whitespace-pre-wrap text-sm leading-relaxed text-ink/80">
           {answer}
         </p>
       </div>

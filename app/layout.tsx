@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import { figmaSans, figmaMono } from "./fonts";
 import ConvexClientProvider from "@/components/ConvexClientProvider";
 import PostHogProvider from "@/components/PostHogProvider";
+import { ThemeProvider } from "@/components/ThemeProvider";
 
 export const metadata: Metadata = {
   title: "INTERCEPT — the AI-native GTM chat",
@@ -10,7 +12,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0a0a0b",
+  // Light theme → white canvas (was "#0a0a0b" dark).
+  themeColor: "#ffffff",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -22,11 +25,34 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      className={`${figmaSans.variable} ${figmaMono.variable}`}
+      suppressHydrationWarning // theme class is set pre-paint by the script below
+    >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              (function () {
+                try {
+                  var t = localStorage.getItem('intercept-theme') || 'light';
+                  var root = document.documentElement;
+                  root.setAttribute('data-theme', t);
+                  root.classList.toggle('dark', t === 'dark');
+                  root.style.colorScheme = t === 'dark' ? 'dark' : 'light';
+                } catch (e) {}
+              })();
+            `,
+          }}
+        />
+      </head>
       <body>
-        <ConvexClientProvider>
-          <PostHogProvider>{children}</PostHogProvider>
-        </ConvexClientProvider>
+        <ThemeProvider>
+          <ConvexClientProvider>
+            <PostHogProvider>{children}</PostHogProvider>
+          </ConvexClientProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

@@ -31,7 +31,7 @@ interface BriefProps {
 }
 
 function SkeletonLine({ w }: { w: string }) {
-  return <div className={`h-3 ${w} animate-pulse rounded bg-line`} />;
+  return <div className={`h-3 ${w} animate-pulse rounded bg-surface-soft`} />;
 }
 
 export default function Brief({ runId }: BriefProps) {
@@ -73,9 +73,9 @@ export default function Brief({ runId }: BriefProps) {
   const readyDrafts = (drafts ?? []).filter((d) => d.status === "awaiting_approval").length;
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 text-zinc-200">
+    <div className="mx-auto w-full max-w-5xl space-y-8 px-4 py-8 text-ink">
       {/* ───────────────── Brief: ICP + positioning ───────────────── */}
-      <section className="rounded-2xl border border-line bg-panel/80 p-6 backdrop-blur">
+      <section className="rounded-lg border border-hairline bg-canvas p-6">
         {briefLoading ? (
           <div className="space-y-3">
             <SkeletonLine w="w-24" />
@@ -85,20 +85,20 @@ export default function Brief({ runId }: BriefProps) {
         ) : brief ? (
           <div className="grid gap-6 sm:grid-cols-2">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
+              <p className="caption text-ink/60">
                 Ideal customer
               </p>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-200">{brief.icp}</p>
+              <p className="mt-2 text-sm leading-relaxed text-ink/80">{brief.icp}</p>
             </div>
-            <div className="sm:border-l sm:border-line sm:pl-6">
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-accent">
+            <div className="sm:border-l sm:border-hairline sm:pl-6">
+              <p className="caption text-ink/60">
                 Positioning
               </p>
-              <p className="mt-2 text-sm leading-relaxed text-zinc-200">{brief.positioning}</p>
+              <p className="mt-2 text-sm leading-relaxed text-ink/80">{brief.positioning}</p>
             </div>
           </div>
         ) : (
-          <p className="text-sm text-zinc-500">Building the brief…</p>
+          <p className="text-sm text-ink/50">Building the brief…</p>
         )}
       </section>
 
@@ -109,7 +109,7 @@ export default function Brief({ runId }: BriefProps) {
       {/* ───────────────── Communities ───────────────── */}
       {communities && communities.length > 0 && (
         <section>
-          <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+          <h2 className="caption mb-3 text-ink/50">
             Where the buyers gather
           </h2>
           <div className="flex flex-wrap gap-2">
@@ -120,11 +120,11 @@ export default function Brief({ runId }: BriefProps) {
                 target="_blank"
                 rel="noopener noreferrer"
                 title={c.why}
-                className="group inline-flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:border-accent/50 hover:text-white"
+                className="group inline-flex items-center gap-2 rounded-pill border border-hairline bg-canvas px-3 py-1.5 text-sm text-ink transition-colors hover:border-ink/40"
               >
-                <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+                <span className="h-1.5 w-1.5 rounded-full bg-ink" />
                 {c.name}
-                <span className="text-xs text-zinc-600 group-hover:text-zinc-400">
+                <span className="text-xs text-ink/40">
                   {c.platform}
                 </span>
               </a>
@@ -137,13 +137,13 @@ export default function Brief({ runId }: BriefProps) {
       <section>
         <div className="mb-4 flex items-end justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-50">Live conversations to win</h2>
-            <p className="text-sm text-zinc-500">
+            <h2 className="text-lg font-fig-headline text-ink">Live conversations to win</h2>
+            <p className="text-sm text-ink/60">
               Real threads where buyers are asking the exact question you answer — ranked by intent.
             </p>
           </div>
           {readyDrafts > 0 && (
-            <span className="whitespace-nowrap rounded-full bg-accent/15 px-3 py-1 text-xs font-semibold text-accent ring-1 ring-accent/30">
+            <span className="caption whitespace-nowrap rounded-full bg-block-cream px-3 py-1 text-ink">
               {readyDrafts} {readyDrafts === 1 ? "reply" : "replies"} awaiting approval
             </span>
           )}
@@ -152,11 +152,11 @@ export default function Brief({ runId }: BriefProps) {
         {threadsLoading ? (
           <div className="grid gap-4 sm:grid-cols-2">
             {[0, 1, 2, 3].map((i) => (
-              <div key={i} className="h-48 animate-pulse rounded-2xl border border-line bg-panel/60" />
+              <div key={i} className="h-48 animate-pulse rounded-lg border border-hairline bg-surface-soft" />
             ))}
           </div>
         ) : rankedThreads.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-line bg-panel/40 p-10 text-center text-sm text-zinc-500">
+          <div className="rounded-lg border border-dashed border-hairline bg-surface-soft p-10 text-center text-sm text-ink/60">
             No live threads surfaced yet — the detective is still on the case.
           </div>
         ) : (

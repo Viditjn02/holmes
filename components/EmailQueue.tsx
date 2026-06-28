@@ -69,24 +69,24 @@ function EmailRow({ email }: { email: EmailDoc }) {
   }, [sendEmail, email._id]);
 
   return (
-    <div className="rounded-xl border border-line bg-panel/70 p-3">
+    <div className="rounded-lg border border-hairline bg-canvas p-3">
       <div className="flex items-start justify-between gap-3">
         <button onClick={() => setOpen((v) => !v)} className="min-w-0 flex-1 text-left">
           <div className="flex items-center gap-2">
             <span
-              className="rounded-full border px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-wide"
+              className="caption rounded-full border px-2 py-0.5"
               style={tintStyle(meta.hex)}
             >
               {meta.label}
             </span>
             {email.kind === "followup" && (
-              <span className="rounded-full bg-white/5 px-1.5 py-0.5 text-[9.5px] font-medium uppercase tracking-wide text-white/45">
+              <span className="caption rounded-full bg-surface-soft px-1.5 py-0.5 text-ink/50">
                 follow-up {email.step}
               </span>
             )}
           </div>
-          <p className="mt-1.5 truncate text-[13px] font-semibold text-zinc-100">{email.subject}</p>
-          <p className="mt-0.5 truncate text-[11px] text-zinc-500">
+          <p className="mt-1.5 truncate text-[13px] font-fig-headline text-ink">{email.subject}</p>
+          <p className="mt-0.5 truncate text-[11px] text-ink/50">
             {email.to ? `to ${email.to}` : "recipient resolved at send"}
             {email.signalRef ? ` · ${email.signalRef}` : ""}
           </p>
@@ -94,22 +94,22 @@ function EmailRow({ email }: { email: EmailDoc }) {
         <svg
           viewBox="0 0 24 24"
           fill="none"
-          className={cn("mt-1 h-4 w-4 shrink-0 text-white/30 transition-transform", open && "rotate-180")}
+          className={cn("mt-1 h-4 w-4 shrink-0 text-ink/30 transition-transform", open && "rotate-180")}
         >
           <path d="m6 9 6 6 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
 
       {open && (
-        <div className="mt-2.5 rounded-lg border border-line bg-ink/50 p-3">
-          <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-zinc-300">{email.body}</p>
+        <div className="mt-2.5 rounded-md border border-hairline bg-surface-soft p-3">
+          <p className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink/70">{email.body}</p>
         </div>
       )}
 
       {email.status === "replied" && email.replyBody && (
-        <div className="mt-2 rounded-lg border border-good/30 bg-good/5 p-2.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wide text-good">They replied {relativeTime(email.repliedAt)}</p>
-          <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[12px] text-zinc-300">{email.replyBody}</p>
+        <div className="mt-2 rounded-md border border-hairline bg-block-mint p-2.5">
+          <p className="caption text-success">They replied {relativeTime(email.repliedAt)}</p>
+          <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-[12px] text-ink/80">{email.replyBody}</p>
         </div>
       )}
 
@@ -121,14 +121,14 @@ function EmailRow({ email }: { email: EmailDoc }) {
               <button
                 onClick={approve}
                 disabled={!!busy}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-good px-3 py-1.5 text-[12px] font-semibold text-ink transition-transform hover:scale-[1.02] disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 rounded-pill bg-block-mint px-4 py-1.5 text-[12px] font-fig-link text-ink transition-colors hover:bg-block-mint/80 disabled:opacity-50"
               >
                 {busy === "approve" ? "Approving…" : "Approve"}
               </button>
               <button
                 onClick={skip}
                 disabled={!!busy}
-                className="rounded-lg px-3 py-1.5 text-[12px] font-medium text-zinc-300 ring-1 ring-line transition-colors hover:bg-white/5 disabled:opacity-50"
+                className="rounded-pill border border-hairline bg-canvas px-4 py-1.5 text-[12px] font-fig-link text-ink transition-colors hover:bg-surface-soft disabled:opacity-50"
               >
                 {busy === "skip" ? "…" : "Skip"}
               </button>
@@ -138,7 +138,7 @@ function EmailRow({ email }: { email: EmailDoc }) {
             <button
               onClick={send}
               disabled={!!busy}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink transition-transform hover:scale-[1.02] disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 rounded-pill bg-primary px-4 py-1.5 text-[12px] font-fig-link text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
             >
               <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5">
                 <path d="m22 2-7 20-4-9-9-4Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
@@ -147,11 +147,11 @@ function EmailRow({ email }: { email: EmailDoc }) {
               {busy === "send" ? "Sending…" : "Send via AgentMail"}
             </button>
           )}
-          {note && <span className="text-[11px] text-zinc-500">{note}</span>}
+          {note && <span className="text-[11px] text-ink/50">{note}</span>}
         </div>
       )}
       {isSent && (
-        <p className="mt-2 text-[11px] text-good">
+        <p className="mt-2 text-[11px] text-success">
           {email.status === "replied" ? "Replied" : "Sent"} via AgentMail {relativeTime(email.sentAt)}
         </p>
       )}
@@ -169,7 +169,7 @@ export default function EmailQueue({ runId }: { runId: Id<"runs"> }) {
     return (
       <div className="space-y-2">
         {[0, 1, 2].map((i) => (
-          <div key={i} className="h-20 animate-pulse rounded-xl border border-line bg-panel/50" />
+          <div key={i} className="h-20 animate-pulse rounded-lg border border-hairline bg-surface-soft" />
         ))}
       </div>
     );
@@ -181,20 +181,20 @@ export default function EmailQueue({ runId }: { runId: Id<"runs"> }) {
     <section className="space-y-3">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h3 className="text-[15px] font-semibold text-zinc-50">Outreach queue</h3>
-          <p className="text-[12.5px] text-zinc-500">
+          <h3 className="text-[15px] font-fig-headline text-ink">Outreach queue</h3>
+          <p className="text-[12.5px] text-ink/60">
             Signal-grounded emails · human approval gate · AgentMail send
           </p>
         </div>
         {awaiting > 0 && (
-          <span className="rounded-full bg-accent/15 px-3 py-1 text-[11px] font-semibold text-accent ring-1 ring-accent/30">
+          <span className="caption rounded-full bg-block-cream px-3 py-1 text-ink">
             {awaiting} awaiting approval
           </span>
         )}
       </div>
 
       {(emails?.length ?? 0) === 0 ? (
-        <div className="rounded-2xl border border-dashed border-line bg-panel/40 p-10 text-center text-[13px] text-zinc-500">
+        <div className="rounded-lg border border-dashed border-hairline bg-surface-soft p-10 text-center text-[13px] text-ink/60">
           The writer drafts a signal-grounded email per qualified prospect — they queue here for your approval.
         </div>
       ) : (
@@ -204,7 +204,7 @@ export default function EmailQueue({ runId }: { runId: Id<"runs"> }) {
           ))}
           {done.length > 0 && (
             <>
-              <p className="px-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-white/30">Shipped</p>
+              <p className="caption px-1 pt-1 text-ink/40">Shipped</p>
               {done.map((e) => (
                 <EmailRow key={e._id} email={e} />
               ))}

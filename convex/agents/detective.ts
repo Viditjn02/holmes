@@ -39,6 +39,7 @@ import type { ExaThread } from "../../lib/exa";
 // Discovery uses Exa when a key is present, else a FREE HN + Reddit fallback so
 // the moat works at $0. Same ExaThread shape — a drop-in for the old searchThreads.
 import { discoverThreads } from "../../lib/discovery";
+import { keyFor } from "../../lib/knowledge";
 
 // ----------------------------------------------------------------------------
 // Tuning knobs
@@ -100,8 +101,25 @@ export const run = internalAction({
     const icp = brief?.icp?.trim() ?? "";
     const positioning = brief?.positioning?.trim() ?? "";
 
+    // Compounding loop: pull what prior runs learned about this company/space so
+    // query derivation builds on accumulated intent knowledge. Graceful on empty.
+    let learned = "";
+    try {
+      const k = await ctx.runAction(internal.knowledge.queryContext, {
+        query: positioning || company,
+        entityType: "company",
+        entityKey: keyFor(run),
+        maxBytes: 8192,
+      });
+      if (k.available) {
+        learned = `\n\nWHAT WE'VE LEARNED (prior runs):\n${k.context}`;
+      }
+    } catch {
+      learned = "";
+    }
+
     // 1. derive buyer-intent search queries (LLM, with deterministic fallback)
-    const queries = await deriveQueries(company, icp, positioning);
+    const queries = await deriveQueries(company, icp, positioning, learned);
 
     // 2. search reddit + HN in parallel; gather REAL threads
     const settled = await Promise.allSettled(
@@ -279,6 +297,7 @@ async function deriveQueries(
   company: string,
   icp: string,
   positioning: string,
+  learned = "",
 ): Promise<string[]> {
   const fallback = fallbackQueries(company, positioning);
   if (!company && !positioning) return fallback;
@@ -292,7 +311,8 @@ async function deriveQueries(
         "people with real purchase intent, NOT marketing pages. Phrase queries the way a " +
         "frustrated buyer would type them. Favor: 'alternatives to <competitor>', " +
         "'looking for a tool that <does the job>', '<pain point> recommendations', " +
-        "'best <category> for <ICP>', 'is <incumbent> worth it'. Return STRICT JSON.",
+        "'best <category> for <ICP>', 'is <incumbent> worth it'. Return STRICT JSON." +
+        learned,
       user: JSON.stringify({
         company,
         idealCustomerProfile: icp,

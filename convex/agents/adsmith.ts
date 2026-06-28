@@ -39,6 +39,7 @@ import { chatJSON } from "../../lib/openai";
 import { generateImage } from "../../lib/image";
 import { capture } from "../../lib/posthog";
 import { safeFetch } from "../../lib/safeFetch";
+import { keyFor } from "../../lib/knowledge";
 
 // ----------------------------------------------------------------------------
 // Validator for one generated/persisted ad creative (mirrors the schema row).
@@ -238,10 +239,27 @@ export const run = internalAction({
       return;
     }
 
+    // Compounding loop: read what prior runs learned about this company so the
+    // ad copy builds on accumulated messaging knowledge. Graceful on a first run.
+    let learned = "";
+    try {
+      const k = await ctx.runAction(internal.knowledge.queryContext, {
+        query: data.positioning || data.company,
+        entityType: "company",
+        entityKey: keyFor({ company: data.company, input: data.input }),
+        maxBytes: 8192,
+      });
+      if (k.available) {
+        learned = `\n\nWHAT WE'VE LEARNED (prior runs):\n${k.context}`;
+      }
+    } catch {
+      learned = "";
+    }
+
     // 1) COPY + STRATEGY + IMAGE PROMPT + VARIATIONS via OpenAI.
     let copy: AdCopy;
     try {
-      copy = await writeAdCopy(data, sourceCreative);
+      copy = await writeAdCopy(data, sourceCreative, learned);
     } catch {
       await logEvent(
         ctx,
@@ -341,6 +359,7 @@ interface AdCopy {
 async function writeAdCopy(
   data: AdsmithContext,
   source: SourceCreative | null,
+  learned = "",
 ): Promise<AdCopy> {
   const grounding = data.groundingAd
     ? [
@@ -378,7 +397,7 @@ async function writeAdCopy(
       : "MODE: CREATE — write a NEW ad that mirrors the winning angle of the reference, but in this company's voice and the buyers' own words. Do NOT plagiarize the reference.",
     "Write in the buyers' real language. No emojis spam, no clickbait lies, no fabricated stats or claims.",
     "The image prompt must describe a single, clean, professional ad hero image (no text overlays, no logos, no watermarks, no gibberish letters).",
-  ].join(" ");
+  ].join(" ") + learned;
 
   const user = [
     `Company / advertiser: ${data.company}`,

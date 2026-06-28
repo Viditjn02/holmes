@@ -31,9 +31,9 @@ const PLATFORM_LABEL: Record<string, string> = {
 const DIMENSIONS = ["hook", "emotion", "clarity", "timeliness", "cta"] as const;
 
 function scoreTone(score: number): string {
-  if (score >= 75) return "text-good";
-  if (score >= 55) return "text-accent";
-  return "text-white/50";
+  if (score >= 75) return "text-success";
+  if (score >= 55) return "text-ink";
+  return "text-ink/50";
 }
 
 export default function ContentCalendar({ runId }: ContentCalendarProps) {
@@ -55,21 +55,20 @@ export default function ContentCalendar({ runId }: ContentCalendarProps) {
     (calendar?.length ?? 0) > 0;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel/80">
-      <header className="flex items-center justify-between border-b border-line px-5 py-4">
+    <section className="overflow-hidden rounded-lg border border-hairline bg-canvas">
+      <header className="flex items-center justify-between border-b border-hairline px-5 py-4">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-100">Algorithm hacking</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="text-headline text-ink">Algorithm hacking</h3>
+          <p className="text-body-sm text-ink/60">
             Live trends, scored viral posts, a short reel, and a content calendar
           </p>
         </div>
         <span
-          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-            hasAnything
-              ? "bg-good/15 text-good ring-1 ring-good/30"
-              : "bg-accent/15 text-accent ring-1 ring-accent/30"
+          className={`caption inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 ${
+            hasAnything ? "bg-block-mint text-ink" : "bg-surface-soft text-ink"
           }`}
         >
+          {hasAnything && <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />}
           {hasAnything ? "Ready" : "Generating"}
         </span>
       </header>
@@ -98,14 +97,14 @@ function EmptyState({ loading }: { loading: boolean }) {
         {loading ? (
           <>
             <div className="relative h-12 w-12">
-              <span className="absolute inset-0 animate-spin rounded-full border-2 border-line border-t-accent" />
-              <span className="absolute inset-2 rounded-full bg-accent/10" />
+              <span className="absolute inset-0 animate-spin rounded-full border-2 border-hairline border-t-ink" />
+              <span className="absolute inset-2 rounded-full bg-surface-soft" />
             </div>
-            <p className="text-sm text-zinc-400">Loading the social engine…</p>
+            <p className="text-body-sm text-ink/70">Loading the social engine…</p>
           </>
         ) : (
           <>
-            <div className="grid h-12 w-12 place-items-center rounded-full bg-accent/10 text-accent ring-1 ring-accent/30">
+            <div className="grid h-12 w-12 place-items-center rounded-full bg-surface-soft text-ink">
               <svg
                 width="22"
                 height="22"
@@ -120,11 +119,11 @@ function EmptyState({ loading }: { loading: boolean }) {
                 <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z" />
               </svg>
             </div>
-            <p className="text-sm text-zinc-400">
+            <p className="text-body-sm text-ink/70">
               Scanning trends, drafting scored viral posts, rendering a reel, and
               laying out a content calendar…
             </p>
-            <p className="text-xs text-zinc-600">
+            <p className="text-body-sm text-ink/50">
               Boards appear the moment each agent finishes.
             </p>
           </>
@@ -143,22 +142,22 @@ function TrendChips({ trends }: { trends: Doc<"trends">[] }) {
         {trends.map((t) => (
           <div
             key={t._id}
-            className="group relative rounded-xl border border-line bg-ink/40 px-3 py-2"
+            className="group relative rounded-md border border-hairline bg-surface-soft px-3 py-2"
             title={t.why}
           >
             <div className="flex items-center gap-2">
-              <span className="text-[13px] font-medium text-zinc-100">{t.topic}</span>
-              <span className={`text-[11px] font-bold ${scoreTone(t.score)}`}>
+              <span className="text-body-sm font-fig-headline text-ink">{t.topic}</span>
+              <span className={`text-body-sm font-fig-card ${scoreTone(t.score)}`}>
                 {t.score}
               </span>
             </div>
-            <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-line">
+            <div className="mt-1.5 h-1 w-full overflow-hidden rounded-full bg-canvas">
               <div
-                className="h-full rounded-full bg-accent"
+                className="h-full rounded-full bg-ink"
                 style={{ width: `${Math.max(4, Math.min(100, t.score))}%` }}
               />
             </div>
-            <p className="mt-1 max-w-[220px] truncate text-[11px] text-zinc-500">
+            <p className="mt-1 max-w-[220px] truncate text-body-sm text-ink/50">
               {t.angle}
             </p>
           </div>
@@ -190,7 +189,7 @@ function PostVariants({ posts }: { posts: Doc<"posts">[] }) {
       <div className="mt-3 flex flex-col gap-5">
         {Array.from(byPlatform.entries()).map(([platform, variants]) => (
           <div key={platform}>
-            <h5 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+            <h5 className="eyebrow mb-2 text-[12px] text-ink">
               {PLATFORM_LABEL[platform] ?? platform}
             </h5>
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -208,22 +207,22 @@ function PostVariants({ posts }: { posts: Doc<"posts">[] }) {
 function PostCard({ post, best }: { post: Doc<"posts">; best: boolean }) {
   return (
     <div
-      className={`flex flex-col gap-2 rounded-xl border p-4 ${
-        best ? "border-good/40 bg-good/5" : "border-line bg-ink/40"
+      className={`flex flex-col gap-2 rounded-md border p-4 ${
+        best ? "border-transparent bg-block-mint" : "border-hairline bg-surface-soft"
       }`}
     >
       <div className="flex items-start justify-between gap-2">
-        <p className="text-[13px] font-semibold leading-snug text-zinc-100">
-          {best && <span className="mr-1 text-good">★</span>}
+        <p className="text-body-sm font-fig-headline leading-snug text-ink">
+          {best && <span className="mr-1 text-success">★</span>}
           {post.hook}
         </p>
         <ViralityGauge score={post.viralityScore} />
       </div>
-      <p className="whitespace-pre-line text-[12px] leading-relaxed text-zinc-400">
+      <p className="whitespace-pre-line text-body-sm leading-relaxed text-ink/70">
         {post.body}
       </p>
       {post.hashtags.length > 0 && (
-        <p className="text-[11px] text-accent/80">{post.hashtags.join(" ")}</p>
+        <p className="text-body-sm text-ink/60">{post.hashtags.join(" ")}</p>
       )}
       <Breakdown breakdown={post.viralityBreakdown} />
     </div>
@@ -233,10 +232,10 @@ function PostCard({ post, best }: { post: Doc<"posts">; best: boolean }) {
 function ViralityGauge({ score }: { score: number }) {
   return (
     <div className="flex shrink-0 flex-col items-center">
-      <span className={`text-base font-bold leading-none ${scoreTone(score)}`}>
+      <span className={`text-card-title leading-none ${scoreTone(score)}`}>
         {score}
       </span>
-      <span className="text-[9px] uppercase tracking-wide text-zinc-600">viral</span>
+      <span className="caption text-ink/60 text-[9px]">viral</span>
     </div>
   );
 }
@@ -250,16 +249,16 @@ function Breakdown({
     <div className="mt-1 flex flex-col gap-1">
       {DIMENSIONS.map((dim) => (
         <div key={dim} className="flex items-center gap-2">
-          <span className="w-16 shrink-0 text-[9px] uppercase tracking-wide text-zinc-600">
+          <span className="caption w-16 shrink-0 text-ink/60 text-[9px]">
             {dim}
           </span>
-          <div className="h-1 flex-1 overflow-hidden rounded-full bg-line">
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-canvas">
             <div
-              className="h-full rounded-full bg-accent/70"
+              className="h-full rounded-full bg-ink"
               style={{ width: `${Math.max(2, Math.min(100, breakdown[dim]))}%` }}
             />
           </div>
-          <span className="w-6 shrink-0 text-right text-[9px] tabular-nums text-zinc-500">
+          <span className="nums w-6 shrink-0 text-right text-[9px] text-ink/70">
             {breakdown[dim]}
           </span>
         </div>
@@ -285,10 +284,10 @@ function ReelBlock({ reel }: { reel: Doc<"creatives"> }) {
               src={reel.url}
               controls
               playsInline
-              className="aspect-[9/16] w-full rounded-xl border border-line bg-black object-cover"
+              className="aspect-[9/16] w-full rounded-md border border-hairline bg-surface-soft object-cover"
             />
           ) : (
-            <div className="grid aspect-[9/16] w-full place-items-center rounded-xl border border-line bg-ink/60 text-center text-[12px] text-zinc-500">
+            <div className="grid aspect-[9/16] w-full place-items-center rounded-md border border-hairline bg-surface-soft px-3 text-center text-body-sm text-ink/50">
               {failed
                 ? "Reel render unavailable on this key — the rest of the brief is unaffected."
                 : "Rendering the reel…"}
@@ -296,10 +295,10 @@ function ReelBlock({ reel }: { reel: Doc<"creatives"> }) {
           )}
         </div>
         <div className="flex-1">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+          <p className="eyebrow text-[12px] text-ink">
             Reel script / prompt
           </p>
-          <p className="mt-1.5 whitespace-pre-line text-[12px] leading-relaxed text-zinc-500">
+          <p className="mt-1.5 whitespace-pre-line text-body-sm leading-relaxed text-ink/60">
             {reel.prompt}
           </p>
         </div>
@@ -341,9 +340,9 @@ function CalendarGrid({
           return (
             <div
               key={day}
-              className="flex min-h-[84px] flex-col gap-1.5 rounded-lg border border-line bg-ink/30 p-2"
+              className="flex min-h-[84px] flex-col gap-1.5 rounded-md border border-hairline bg-surface-soft p-2"
             >
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-600">
+              <span className="caption text-ink/60 text-[10px]">
                 Day {day + 1}
               </span>
               {daySlots.map((s) => {
@@ -351,20 +350,20 @@ function CalendarGrid({
                 return (
                   <div
                     key={s._id}
-                    className="rounded-md border border-line bg-panel/70 p-1.5"
+                    className="rounded-sm border border-hairline bg-canvas p-1.5"
                     title={s.title}
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <span className="truncate text-[10px] font-medium text-accent">
+                      <span className="caption truncate text-ink text-[10px]">
                         {PLATFORM_LABEL[s.platform] ?? s.platform}
                       </span>
                       {score !== undefined && (
-                        <span className={`text-[10px] font-bold ${scoreTone(score)}`}>
+                        <span className={`text-[10px] font-fig-card ${scoreTone(score)}`}>
                           {score}
                         </span>
                       )}
                     </div>
-                    <p className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-zinc-400">
+                    <p className="mt-0.5 line-clamp-2 text-[10px] leading-tight text-ink/70">
                       {s.title}
                     </p>
                   </div>
@@ -382,10 +381,10 @@ function CalendarGrid({
 function SectionTitle({ title, subtitle }: { title: string; subtitle: string }) {
   return (
     <div>
-      <h4 className="text-xs font-semibold uppercase tracking-wide text-zinc-300">
+      <h4 className="eyebrow text-ink">
         {title}
       </h4>
-      <p className="text-[11px] text-zinc-600">{subtitle}</p>
+      <p className="text-body-sm text-ink/50">{subtitle}</p>
     </div>
   );
 }

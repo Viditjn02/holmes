@@ -211,35 +211,35 @@ const STATUS_STYLE: Record<
   AgentStatusValue,
   { ring: string; chip: string; label: string; text: string }
 > = {
-  queued: { ring: "border-line/80", chip: "bg-white/5 text-white/40 border-white/10", label: "Queued", text: "text-white/40" },
-  running: { ring: "border-accent/70 shadow-[0_0_28px_-8px_rgba(255,106,43,0.5)]", chip: "bg-accent/15 text-accent border-accent/30", label: "Running", text: "text-white" },
-  done: { ring: "border-good/45", chip: "bg-good/15 text-good border-good/30", label: "Done", text: "text-white" },
-  skipped: { ring: "border-line/60", chip: "bg-white/5 text-white/40 border-white/10", label: "Skipped", text: "text-white/45" },
-  failed: { ring: "border-red-500/40", chip: "bg-red-500/15 text-red-300 border-red-500/30", label: "Failed", text: "text-white/70" },
+  queued: { ring: "border-hairline", chip: "bg-surface-soft text-ink border-hairline", label: "Queued", text: "text-ink" },
+  running: { ring: "border-ink", chip: "bg-ink text-canvas border-transparent", label: "Running", text: "text-ink" },
+  done: { ring: "border-hairline", chip: "bg-block-mint text-ink border-transparent", label: "Done", text: "text-ink" },
+  skipped: { ring: "border-hairline", chip: "bg-surface-soft text-ink border-hairline", label: "Skipped", text: "text-ink" },
+  failed: { ring: "border-red-500/40", chip: "bg-block-pink text-ink border-transparent", label: "Failed", text: "text-ink" },
 };
 
 function StatusIcon({ status }: { status: AgentStatusValue }) {
   if (status === "running")
-    return <span className="h-3.5 w-3.5 animate-spin-slow rounded-full border-2 border-accent/30 border-t-accent" />;
+    return <span className="h-3.5 w-3.5 animate-spin-slow rounded-full border-2 border-canvas/40 border-t-canvas" />;
   if (status === "done")
     return (
-      <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-good">
+      <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-success">
         <path d="m5 12.5 4 4 10-10" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     );
   if (status === "failed")
     return (
-      <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-red-300">
+      <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-red-500">
         <path d="m7 7 10 10M17 7 7 17" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
       </svg>
     );
   if (status === "skipped")
     return (
-      <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-white/35">
+      <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5 text-ink/50">
         <path d="M6 12h12" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
       </svg>
     );
-  return <span className="h-2 w-2 rounded-full bg-white/30 animate-blink" />;
+  return <span className="h-2 w-2 rounded-full bg-ink/40 animate-blink" />;
 }
 
 function AgentTile({
@@ -261,35 +261,35 @@ function AgentTile({
   return (
     <div
       className={cn(
-        "group relative flex flex-col gap-2.5 rounded-xl border glass p-3.5 transition-all duration-500 animate-fade-up",
+        "group relative flex flex-col gap-2.5 rounded-lg border bg-canvas p-3.5 transition-all duration-500 animate-fade-up",
         s.ring,
       )}
       style={{ animationDelay: `${index * 60}ms` }}
     >
-      {isRunning && <span className="pointer-events-none absolute inset-0 rounded-xl animate-pulse-ring" />}
+      {isRunning && <span className="pointer-events-none absolute inset-0 rounded-lg animate-pulse-ring" />}
       <div className="flex items-center justify-between">
         <div
           className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-lg border transition-colors",
+            "flex h-9 w-9 items-center justify-center rounded-md border transition-colors",
             isRunning
-              ? "border-accent/40 bg-accent/10 text-accent"
+              ? "border-transparent bg-ink text-canvas"
               : status === "done"
-                ? "border-good/30 bg-good/10 text-good"
-                : "border-white/10 bg-white/5 text-white/45",
+                ? "border-transparent bg-block-mint text-ink"
+                : "border-hairline bg-surface-soft text-ink",
           )}
         >
           {meta.icon}
         </div>
-        <span className={cn("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide", s.chip)}>
+        <span className={cn("caption inline-flex items-center gap-1.5 rounded-full border px-2 py-1", s.chip)}>
           <StatusIcon status={status} />
           {s.label}
         </span>
       </div>
       <div>
-        <h3 className={cn("text-[13.5px] font-semibold leading-tight", s.text)}>{spec.label}</h3>
-        <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-snug text-white/45">{note ?? meta.tagline}</p>
+        <h3 className={cn("text-[13.5px] font-fig-card leading-tight", s.text)}>{spec.label}</h3>
+        <p className="mt-0.5 line-clamp-2 text-[11.5px] font-fig-body leading-snug text-ink">{note ?? meta.tagline}</p>
       </div>
-      <div className="mt-auto h-0.5 w-full overflow-hidden rounded-full bg-white/5">
+      <div className="mt-auto h-0.5 w-full overflow-hidden rounded-full bg-surface-soft">
         {isRunning ? (
           <div className="scan-track h-full w-full" />
         ) : (
@@ -297,11 +297,11 @@ function AgentTile({
             className={cn(
               "h-full rounded-full transition-all duration-700",
               status === "done"
-                ? "w-full bg-good"
+                ? "w-full bg-success"
                 : status === "failed"
-                  ? "w-full bg-red-500/60"
+                  ? "w-full bg-red-500"
                   : status === "skipped"
-                    ? "w-full bg-white/15"
+                    ? "w-full bg-ink/20"
                     : "w-0",
             )}
           />
@@ -351,28 +351,28 @@ export default function SwarmBoard({
         <div className="flex items-center gap-2.5">
           <span className={cn("relative flex h-2.5 w-2.5", runStatus === "running" ? "" : "opacity-60")}>
             {runStatus === "running" && (
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-accent/70" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-ink/60" />
             )}
             <span
               className={cn(
                 "relative inline-flex h-2.5 w-2.5 rounded-full",
-                runStatus === "failed" ? "bg-red-400" : runStatus === "running" ? "bg-accent" : "bg-good",
+                runStatus === "failed" ? "bg-red-500" : runStatus === "running" ? "bg-ink" : "bg-success",
               )}
             />
           </span>
-          <h2 className="text-[15px] font-semibold tracking-tight">
+          <h2 className="text-[15px] font-fig-headline text-ink">
             {headline}
-            {run?.company ? <span className="text-white/45"> · {run.company}</span> : null}
+            {run?.company ? <span className="font-fig-body text-ink"> · {run.company}</span> : null}
           </h2>
         </div>
-        <span className="text-[11px] font-medium tabular-nums text-white/40">
+        <span className="caption tabular-nums text-ink">
           {doneCount}/{total} agents · {pct}%
         </span>
       </div>
 
-      <div className="mb-4 h-1 w-full overflow-hidden rounded-full bg-white/5">
+      <div className="mb-4 h-1 w-full overflow-hidden rounded-full bg-surface-soft">
         <div
-          className="h-full rounded-full bg-gradient-to-r from-accent to-good transition-all duration-700 ease-out"
+          className="h-full rounded-full bg-ink transition-all duration-700 ease-out"
           style={{ width: `${Math.max(pct, runStatus === "running" ? 6 : 0)}%` }}
         />
       </div>

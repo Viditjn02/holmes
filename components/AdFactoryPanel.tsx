@@ -30,24 +30,24 @@ function AdImage({ ad }: { ad: Doc<"adCreatives"> }) {
         src={ad.imageUrl}
         alt={ad.headline || "Generated ad"}
         loading="lazy"
-        className="aspect-[4/5] w-full rounded-xl object-cover ring-1 ring-line"
+        className="aspect-[4/5] w-full rounded-md object-cover ring-1 ring-hairline"
       />
     );
   }
 
   // Graceful $0 / no-key path — the copy is live, the image is paused.
   return (
-    <div className="grid aspect-[4/5] w-full place-items-center rounded-xl border border-dashed border-line bg-ink/60 ring-1 ring-line">
+    <div className="grid aspect-[4/5] w-full place-items-center rounded-md border border-hairline bg-surface-soft">
       <div className="flex max-w-[14rem] flex-col items-center gap-2 px-4 text-center">
-        <div className="grid h-10 w-10 place-items-center rounded-full bg-accent/10 text-accent ring-1 ring-accent/30">
+        <div className="grid h-10 w-10 place-items-center rounded-full bg-canvas text-ink">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
             <rect x="3" y="3" width="18" height="18" rx="2.5" />
             <circle cx="9" cy="9" r="2" />
             <path d="m21 15-5-5L5 21" />
           </svg>
         </div>
-        <p className="text-[12px] font-medium text-zinc-300">Image generation paused</p>
-        <p className="text-[11px] leading-snug text-zinc-500">
+        <p className="text-body-sm text-ink">Image generation paused</p>
+        <p className="text-body-sm leading-snug text-ink/60">
           {ad.degradedReason === "fal_zero_balance"
             ? "fal balance is $0 — the copy is live."
             : "Image gen unavailable — the copy is live."}
@@ -67,7 +67,7 @@ function AdCard({ ad }: { ad: Doc<"adCreatives"> }) {
 
   return (
     <div className="grid gap-0 lg:grid-cols-[1fr_1.2fr]">
-      <div className="border-b border-line p-5 lg:border-b-0 lg:border-r">
+      <div className="border-b border-hairline p-5 lg:border-b-0 lg:border-r">
         <AdImage ad={ad} />
       </div>
 
@@ -76,8 +76,8 @@ function AdCard({ ad }: { ad: Doc<"adCreatives"> }) {
         <div className="flex flex-wrap gap-1.5">
           <button
             onClick={() => setTab(-1)}
-            className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-              tab === -1 ? "border-accent/40 bg-accent/10 text-accent" : "border-line bg-panel/60 text-white/55 hover:text-white"
+            className={`rounded-pill px-2.5 py-1 text-[11px] font-fig-link transition-colors ${
+              tab === -1 ? "bg-primary text-on-primary" : "border border-hairline bg-canvas text-ink hover:bg-surface-soft"
             }`}
           >
             Primary
@@ -86,8 +86,8 @@ function AdCard({ ad }: { ad: Doc<"adCreatives"> }) {
             <button
               key={i}
               onClick={() => setTab(i)}
-              className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors ${
-                tab === i ? "border-accent/40 bg-accent/10 text-accent" : "border-line bg-panel/60 text-white/55 hover:text-white"
+              className={`rounded-pill px-2.5 py-1 text-[11px] font-fig-link transition-colors ${
+                tab === i ? "bg-primary text-on-primary" : "border border-hairline bg-canvas text-ink hover:bg-surface-soft"
               }`}
             >
               {vr.angle || `Variant ${i + 1}`}
@@ -95,25 +95,25 @@ function AdCard({ ad }: { ad: Doc<"adCreatives"> }) {
           ))}
         </div>
 
-        <h4 className="text-base font-semibold leading-snug text-zinc-100">{headline}</h4>
-        <p className="text-sm leading-relaxed text-zinc-300">{primaryText}</p>
+        <h4 className="text-card-title leading-snug text-ink">{headline}</h4>
+        <p className="text-body-sm text-ink/80">{primaryText}</p>
 
         <div>
-          <span className="inline-flex rounded-lg bg-accent px-3 py-1.5 text-[12px] font-semibold text-ink">{cta}</span>
+          <span className="inline-flex rounded-pill bg-primary px-3 py-1.5 text-body-sm font-fig-link text-on-primary">{cta}</span>
         </div>
 
         {ad.strategy && (
-          <div className="mt-1 rounded-xl border border-line bg-ink/40 p-3">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-accent">Why this should win</p>
-            <p className="mt-1 text-[12.5px] leading-relaxed text-zinc-300">{ad.strategy}</p>
+          <div className="mt-1 rounded-md bg-block-lime p-3">
+            <p className="eyebrow text-[11px] text-ink">Why this should win</p>
+            <p className="mt-1 text-body-sm leading-relaxed text-ink/80">{ad.strategy}</p>
           </div>
         )}
 
-        <p className="text-[11px] text-zinc-600">
+        <p className="text-body-sm text-ink/50">
           {ad.kind === "replica" && ad.sourceUrl ? (
             <>
               Replicated from{" "}
-              <a href={ad.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-accent underline-offset-2 hover:underline">
+              <a href={ad.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-ink underline underline-offset-2">
                 the source post
               </a>
             </>
@@ -134,17 +134,18 @@ export default function AdFactoryPanel({ runId }: AdFactoryPanelProps) {
   const hasContent = (creatives?.length ?? 0) > 0;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel/80">
-      <header className="flex items-center justify-between border-b border-line px-5 py-4">
+    <section className="overflow-hidden rounded-lg border border-hairline bg-canvas">
+      <header className="flex items-center justify-between border-b border-hairline px-5 py-4">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-100">Generated ad</h3>
-          <p className="text-xs text-zinc-500">A similar ad in your buyers&apos; own words — image, copy, and variations</p>
+          <h3 className="text-headline text-ink">Generated ad</h3>
+          <p className="text-body-sm text-ink/60">A similar ad in your buyers&apos; own words — image, copy, and variations</p>
         </div>
         <span
-          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${
-            hasContent ? "bg-good/15 text-good ring-1 ring-good/30" : "bg-accent/15 text-accent ring-1 ring-accent/30"
+          className={`caption inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1 ${
+            hasContent ? "bg-block-mint text-ink" : "bg-surface-soft text-ink"
           }`}
         >
+          {hasContent && <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />}
           {hasContent ? "Ready" : "Generating"}
         </span>
       </header>
@@ -155,28 +156,28 @@ export default function AdFactoryPanel({ runId }: AdFactoryPanelProps) {
             {loading ? (
               <>
                 <div className="relative h-12 w-12">
-                  <span className="absolute inset-0 animate-spin rounded-full border-2 border-line border-t-accent" />
-                  <span className="absolute inset-2 rounded-full bg-accent/10" />
+                  <span className="absolute inset-0 animate-spin rounded-full border-2 border-hairline border-t-ink" />
+                  <span className="absolute inset-2 rounded-full bg-surface-soft" />
                 </div>
-                <p className="text-sm text-zinc-400">Loading the ad factory…</p>
+                <p className="text-body-sm text-ink/70">Loading the ad factory…</p>
               </>
             ) : (
               <>
-                <div className="grid h-12 w-12 place-items-center rounded-full bg-accent/10 text-accent ring-1 ring-accent/30">
+                <div className="grid h-12 w-12 place-items-center rounded-full bg-surface-soft text-ink">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                     <rect x="3" y="3" width="18" height="18" rx="2.5" />
                     <circle cx="9" cy="9" r="2" />
                     <path d="m21 15-5-5L5 21" />
                   </svg>
                 </div>
-                <p className="text-sm text-zinc-400">Generating a similar ad grounded in the winning angle…</p>
-                <p className="text-xs text-zinc-600">This appears the moment Ad Smith finishes.</p>
+                <p className="text-body-sm text-ink/70">Generating a similar ad grounded in the winning angle…</p>
+                <p className="text-body-sm text-ink/50">This appears the moment Ad Smith finishes.</p>
               </>
             )}
           </div>
         </div>
       ) : (
-        <div className="divide-y divide-line">
+        <div className="divide-y divide-hairline">
           {creatives!.map((ad) => (
             <AdCard key={ad._id} ad={ad} />
           ))}

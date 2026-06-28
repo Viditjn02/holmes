@@ -26,7 +26,9 @@ import { internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import { generateAd } from "../../lib/veo";
 import { renderVideo } from "../../lib/videoWorker";
-import { buildReelScript } from "../virality/reelScript";
+import { buildReelScript, type ReelScript } from "../virality/reelScript";
+import { supadata } from "../../lib/supadata";
+import { chatJSON } from "../../lib/openai";
 
 const REEL_KIND = "social_video";
 const REEL_MODEL = "veo-3.1-fast";
@@ -55,6 +57,9 @@ export const context = internalQuery({
       positioning: brief?.positioning ?? "",
       topic: top?.topic ?? "",
       angle: top?.angle ?? "",
+      // The top trend's source URL doubles as a winning REFERENCE video when it
+      // resolves to YouTube — Supadata transcribes it to ground the script.
+      referenceUrl: top?.url ?? "",
     };
   },
 });
@@ -125,11 +130,22 @@ export const run = internalAction({
     const data = await ctx.runQuery(internal.agents.reelmaker.context, { runId });
     if (data.replay) return; // replay: reel pre-seeded
 
-    const script = buildReelScript({
+    const baseScript = buildReelScript({
       company: data.company,
       topic: data.topic || `what's trending for ${data.company}`,
       angle: data.angle || `why ${data.company} matters now`,
       positioning: data.positioning,
+    });
+
+    // Supadata grounding (additive, never throws): when the top trend points at a
+    // winning YouTube reference video, transcribe it and let OpenAI rewrite the
+    // hook/beats/cta to BEAT it. Without a key / non-YouTube ref / on failure this
+    // returns the deterministic buildReelScript output unchanged.
+    const script = await groundReelScript(baseScript, {
+      company: data.company,
+      topic: data.topic || `what's trending for ${data.company}`,
+      angle: data.angle || `why ${data.company} matters now`,
+      referenceUrl: data.referenceUrl,
     });
 
     await ctx.runMutation(internal.agents.reelmaker.save, {
@@ -215,6 +231,67 @@ export const run = internalAction({
     }
   },
 });
+
+// ----------------------------------------------------------------------------
+// SUPADATA GROUNDING — transcribe the winning reference video → OpenAI rewrites
+// the script to beat it. Floor is the deterministic buildReelScript: any missing
+// key, non-YouTube reference, rate-limit, or model failure returns `base` as-is,
+// so the reel step never stalls and the output is identical to today when off.
+// ----------------------------------------------------------------------------
+function isYouTube(url: string): boolean {
+  return /(?:youtube\.com|youtu\.be)\//i.test(url);
+}
+
+async function groundReelScript(
+  base: ReelScript,
+  data: { company: string; topic: string; angle: string; referenceUrl: string },
+): Promise<ReelScript> {
+  const url = (data.referenceUrl || "").trim();
+  if (!url || !isYouTube(url) || !supadata.enabled()) return base;
+
+  // Single transcript, budget-enforced inside lib/supadata (top reference only).
+  const t = await supadata.youtubeTranscript(url);
+  if (!t.ok || !t.data || !t.data.text.trim()) return base;
+  const reference = t.data.text.slice(0, 6000);
+
+  try {
+    const out = await chatJSON<{ hook?: string; beats?: string[]; cta?: string }>({
+      system:
+        "You are a viral short-form video scriptwriter. You are given the transcript " +
+        "of the current TOP-PERFORMING video on a topic. Study its hook, pacing, and " +
+        "structure, then write a SHORT original 9:16 reel script that BEATS it. Do NOT " +
+        "copy it verbatim. Respond with STRICT JSON only.",
+      user: [
+        `Company: ${data.company}`,
+        `Topic: ${data.topic}`,
+        `Angle: ${data.angle}`,
+        "",
+        "Top-performing reference transcript (verbatim):",
+        reference,
+        "",
+        'Return JSON {"hook": string (~1 sentence scroll-stopper), "beats": string[] ' +
+          '(exactly 3 escalating scene lines), "cta": string (1 social CTA)}.',
+      ].join("\n"),
+      temperature: 0.7,
+      maxTokens: 600,
+    });
+
+    const hook = typeof out?.hook === "string" && out.hook.trim() ? out.hook.trim() : base.hook;
+    const beats =
+      Array.isArray(out?.beats) && out.beats.filter((b) => typeof b === "string" && b.trim()).length >= 1
+        ? out.beats.filter((b): b is string => typeof b === "string" && !!b.trim()).slice(0, 3)
+        : base.beats;
+    const cta = typeof out?.cta === "string" && out.cta.trim() ? out.cta.trim() : base.cta;
+
+    // Re-assemble the 9:16 render prompt around the grounded narration; keep the
+    // deterministic prompt as the scaffold so Veo/worker direction is preserved.
+    const prompt = `${base.prompt}\n\nGrounded in the current top-performing video on this topic (beat it, don't copy):\nHOOK: ${hook}\nBEATS: ${beats.join(" | ")}\nCTA: ${cta}`;
+
+    return { hook, beats, cta, prompt };
+  } catch {
+    return base;
+  }
+}
 
 // ----------------------------------------------------------------------------
 // FREE video worker bridge (MoneyPrinter path). Renders via the local worker,

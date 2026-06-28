@@ -31,6 +31,7 @@ import {
 } from "./orangeslice";
 import { searchAds } from "./meta";
 import { MAX_SCAN_ADS, type AdMediaType, type AdNetwork, type ScannedAd } from "./contract";
+import { supadata } from "./supadata";
 
 export interface ScanOpts {
   /** ISO country code biasing both libraries. Defaults to "US". */
@@ -545,4 +546,87 @@ function computeDays(
   const end = endSec ?? Math.floor(Date.now() / 1000);
   const days = Math.floor((end - startSec) / 86_400);
   return days < 0 ? 0 : days;
+}
+
+// ----------------------------------------------------------------------------
+// SUPADATA ENRICHMENT — grounds `winningAngle` in the competitor's ACTUAL copy.
+// ----------------------------------------------------------------------------
+// Additive, sponsor-friendly, free-tier-disciplined. For the TOP ad only we
+// web-scrape the ad/landing page to clean markdown, and for the single TOP
+// VIDEO ad (YouTube-resolvable URLs only) we pull a transcript. Both are
+// budget/rate-limit guarded inside lib/supadata and NEVER throw — without a
+// SUPADATA_API_KEY (or on rate-limit) this returns an empty map and the scan is
+// byte-identical to today. Keyed by the ad's index in the input array.
+// ----------------------------------------------------------------------------
+export interface AdEnrichment {
+  /** Clean-markdown of the ad/landing page (truncated for token budget). */
+  landingCopy?: string;
+  /** Verbatim transcript of the top video ad (truncated). */
+  videoScript?: string;
+}
+
+/** Heuristic "how proven" score for picking which ad(s) to spend enrichment on. */
+function adWeight(ad: ScannedAd): number {
+  const days = ad.daysRunning ?? 0;
+  const likes = ad.engagement?.likes ?? 0;
+  const active = ad.status === "active" ? 1 : 0;
+  return active * 1000 + days * 10 + Math.min(likes, 1_000_000) / 1000;
+}
+
+/** A generic ad-library landing URL carries no real landing copy worth scraping. */
+function isRealLandingUrl(url: string | undefined): url is string {
+  if (!url || !/^https?:\/\//i.test(url)) return false;
+  return !/\/ads\/library|library\.tiktok\.com|\/ads(\/?$)/i.test(url);
+}
+
+/** Only YouTube URLs are transcript-resolvable; Meta/TikTok CDN mp4s are not. */
+function isYouTubeUrl(url: string | undefined): url is string {
+  return !!url && /(?:youtube\.com|youtu\.be)\//i.test(url);
+}
+
+export async function enrichTopAds(
+  ads: ScannedAd[],
+): Promise<Map<number, AdEnrichment>> {
+  const out = new Map<number, AdEnrichment>();
+  if (ads.length === 0 || !supadata.enabled()) return out;
+
+  // Rank a copy by proven-ness so we spend the (cheap) scrape + (rate-limited)
+  // transcript only on the strongest signal.
+  const ranked = ads
+    .map((ad, index) => ({ ad, index }))
+    .sort((a, b) => adWeight(b.ad) - adWeight(a.ad));
+
+  // 1) Landing/ad-page scrape — TOP ad with a real (non-library) landing URL.
+  const topLanding = ranked.find((r) => isRealLandingUrl(r.ad.url));
+  if (topLanding) {
+    const scraped = await supadata.webScrape(topLanding.ad.url);
+    if (scraped.ok && scraped.data) {
+      const prev = out.get(topLanding.index) ?? {};
+      out.set(topLanding.index, {
+        ...prev,
+        landingCopy: scraped.data.markdown.slice(0, 4000),
+      });
+    }
+  }
+
+  // 2) Transcript — single TOP video ad, YouTube-resolvable only (top-1 only,
+  //    budget enforced inside lib/supadata so we never burn the free tier).
+  const topVideo = ranked.find(
+    (r) => isYouTubeUrl(r.ad.videoUrl) || isYouTubeUrl(r.ad.url),
+  );
+  if (topVideo) {
+    const src = isYouTubeUrl(topVideo.ad.videoUrl)
+      ? topVideo.ad.videoUrl
+      : topVideo.ad.url;
+    const t = await supadata.youtubeTranscript(src);
+    if (t.ok && t.data) {
+      const prev = out.get(topVideo.index) ?? {};
+      out.set(topVideo.index, {
+        ...prev,
+        videoScript: t.data.text.slice(0, 6000),
+      });
+    }
+  }
+
+  return out;
 }

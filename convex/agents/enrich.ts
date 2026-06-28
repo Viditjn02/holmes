@@ -18,6 +18,8 @@ import type { Doc } from "../_generated/dataModel";
 import type { EnrichResult } from "../../lib/contract";
 import { chatJSON } from "../../lib/openai";
 import { enrichCompany } from "../../lib/orangeslice";
+import { keyFor } from "../../lib/knowledge";
+import { supadata } from "../../lib/supadata";
 
 // Loose shape of what the scraper returns. We read every field defensively so a
 // thin scrape still produces a usable brief.
@@ -111,7 +113,41 @@ export const run = internalAction({
     }
 
     const company = resolveCompanyName(scrape, input);
-    const context = buildContext(scrape);
+    let context = buildContext(scrape);
+
+    // Supadata = optional clean-markdown layer BEHIND Orange Slice (the source of
+    // record above). Additive only: when a key is present it scrapes the homepage
+    // to clean markdown and appends it to the brief context; without a key / on
+    // rate-limit it no-ops and the context is byte-identical to today.
+    try {
+      const target = scrapeTarget.trim();
+      const homepage = /^https?:\/\//i.test(target)
+        ? target
+        : `https://${target.replace(/^\/+/, "")}`;
+      const s = await supadata.webScrape(homepage);
+      if (s.ok && s.data && s.data.markdown.trim()) {
+        context = `${context}\n\nFull-page content (Supadata clean markdown):\n${s.data.markdown.slice(0, 4000)}`;
+      }
+    } catch {
+      // Supadata is pure enrichment — never block the brief.
+    }
+
+    // Compounding loop: read what prior runs learned about this company so the
+    // brief builds on accumulated knowledge. Graceful — empty on a first run.
+    let learned = "";
+    try {
+      const k = await ctx.runAction(internal.knowledge.queryContext, {
+        query: company,
+        entityType: "company",
+        entityKey: keyFor(runDoc),
+        maxBytes: 8192,
+      });
+      if (k.available) {
+        learned = `\n\nWHAT WE'VE LEARNED (prior runs):\n${k.context}`;
+      }
+    } catch {
+      learned = "";
+    }
 
     // 2) Infer ICP + positioning. Best-effort: on model failure we still write a
     //    minimal brief so downstream agents have something to work with.
@@ -122,7 +158,8 @@ export const run = internalAction({
           "You are a go-to-market analyst. Given everything known about a " +
           "company, infer its Ideal Customer Profile and its market " +
           "positioning. Be concrete and specific — name roles, company sizes, " +
-          "pains, and the exact category. Respond with STRICT JSON only.",
+          "pains, and the exact category. Respond with STRICT JSON only." +
+          learned,
         user: [
           `Company: ${company}`,
           context

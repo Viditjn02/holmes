@@ -18,10 +18,18 @@ import {
   QUALIFY_THRESHOLD,
 } from "../../lib/contract";
 import { chatJSON } from "../../lib/openai";
+import { keyFor } from "../../lib/knowledge";
 
 interface DraftOut {
   subject: string;
   body: string;
+}
+
+interface WriterContext {
+  company: string;
+  positioning: string;
+  valueProp: string;
+  learned?: string;
 }
 
 export const run = internalAction({
@@ -42,7 +50,27 @@ export const run = internalAction({
     );
     if (qualified.length === 0) return { drafted: 0 };
 
-    const context = await loadContext(ctx, runDoc);
+    const baseContext = await loadContext(ctx, runDoc);
+
+    // Compounding loop: read what prior runs learned about this company so every
+    // draft builds on accumulated messaging knowledge. Graceful on a first run.
+    let context: WriterContext = baseContext;
+    try {
+      const k = await ctx.runAction(internal.knowledge.queryContext, {
+        query: baseContext.positioning || baseContext.company,
+        entityType: "company",
+        entityKey: keyFor(runDoc),
+        maxBytes: 8192,
+      });
+      if (k.available) {
+        context = {
+          ...baseContext,
+          learned: `\n\nWHAT WE'VE LEARNED (prior runs):\n${k.context}`,
+        };
+      }
+    } catch {
+      context = baseContext;
+    }
 
     let drafted = 0;
     await Promise.allSettled(
@@ -94,7 +122,7 @@ export const run = internalAction({
 // ---------------------------------------------------------------------------
 async function writeEmail(
   p: Doc<"prospects">,
-  context: { company: string; positioning: string; valueProp: string },
+  context: WriterContext,
 ): Promise<DraftOut> {
   const signalLine = p.signal
     ? `Real trigger to reference: ${p.signal.summary}${p.signal.url ? ` (${p.signal.url})` : ""}`
@@ -106,7 +134,8 @@ async function writeEmail(
         "You are a top B2B SDR writing a COLD first-touch email. Rules: " +
         `under ${MAX_EMAIL_WORDS} words; reference the prospect's real trigger naturally; ` +
         "lead with them, not us; one clear soft CTA (a question); no fluff, no buzzwords, " +
-        "no exclamation points, at most one link, plain text. Sound human. STRICT JSON.",
+        "no exclamation points, at most one link, plain text. Sound human. STRICT JSON." +
+        (context.learned ?? ""),
       user: [
         `SELLER: ${context.company}`,
         `WHAT WE DO: ${context.positioning || context.valueProp}`,
@@ -158,7 +187,7 @@ function enforceGuardrails(body: string): string {
 
 function fallbackEmail(
   p: Doc<"prospects">,
-  context: { company: string; positioning: string; valueProp: string },
+  context: WriterContext,
 ): DraftOut {
   const first = (p.name ?? "there").split(" ")[0];
   const hook = p.signal

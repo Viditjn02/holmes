@@ -27,6 +27,7 @@ import {
 } from "../../lib/contract";
 import { scoreVariants, pickBest, buildFeedback } from "../virality/scoring";
 import type { ScorablePost } from "../virality/scoring";
+import { keyFor } from "../../lib/knowledge";
 
 // Keep the platform set tight so the board stays scannable + the run stays fast.
 const PLATFORMS = SOCIAL_PLATFORMS.slice(0, 3); // linkedin, x, tiktok
@@ -138,9 +139,26 @@ export const run = internalAction({
     const data = await ctx.runQuery(internal.agents.composer.context, { runId });
     const trendRef = data.trends[0]?.topic;
 
+    // Compounding loop: read what prior runs learned about this company/topic so
+    // every post builds on accumulated content knowledge. Graceful on a first run.
+    let learned = "";
+    try {
+      const k = await ctx.runAction(internal.knowledge.queryContext, {
+        query: trendRef || data.positioning || data.company,
+        entityType: "company",
+        entityKey: keyFor(run),
+        maxBytes: 8192,
+      });
+      if (k.available) {
+        learned = `\n\nWHAT WE'VE LEARNED (prior runs):\n${k.context}`;
+      }
+    } catch {
+      learned = "";
+    }
+
     // Draft per platform in parallel (each call degrades to templates on failure).
     const settled = await Promise.allSettled(
-      PLATFORMS.map((platform) => draftVariants(platform, data, trendRef)),
+      PLATFORMS.map((platform) => draftVariants(platform, data, trendRef, learned)),
     );
     const drafts: DraftVariant[] = settled.flatMap((s) =>
       s.status === "fulfilled" ? s.value : [],
@@ -203,13 +221,14 @@ async function draftVariants(
   platform: string,
   data: ComposeContext,
   trendRef: string | undefined,
+  learned = "",
 ): Promise<DraftVariant[]> {
   const angle = data.trends[0]?.angle ?? `why ${data.company} matters`;
   try {
     const result = await chatJSON<{
       variants?: Array<{ hook?: string; body?: string; hashtags?: string[] }>;
     }>({
-      system: `You are a world-class ${platform} ghostwriter who reliably writes viral posts. Write scroll-stopping hooks, take a clear stance, keep it skimmable, peg it to what's trending now, and ALWAYS end on a single clear call to action.`,
+      system: `You are a world-class ${platform} ghostwriter who reliably writes viral posts. Write scroll-stopping hooks, take a clear stance, keep it skimmable, peg it to what's trending now, and ALWAYS end on a single clear call to action.${learned}`,
       user: `Company: ${data.company}\nICP: ${data.icp || "(unknown)"}\nPositioning: ${
         data.positioning || "(unknown)"
       }\nTrending angle: ${angle}\n\nWrite ${POST_VARIANTS_PER_PLATFORM} DISTINCT ${platform} post variants. Each: a punchy ≤8-word hook, a short skimmable body, and 2-4 relevant hashtags.`,

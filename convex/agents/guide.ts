@@ -38,6 +38,7 @@ import {
 import { normalizeSteps, isFlowViable } from "../../lib/onboarding/flow";
 import { buildEmbed } from "../onboarding/embed";
 import type { OnboardingStep } from "../../lib/contract";
+import { keyFor } from "../../lib/knowledge";
 
 // The persisted tour-step shape (mirrors schema onboardingFlows.tourSteps).
 interface TourStepRow {
@@ -149,7 +150,24 @@ export const run = internalAction({
     const pageText = base.url ? await scrapePageText(base.url) : "";
     const guideCtx: GuideContext = { ...base, pageText };
 
-    const steps = await generateSteps(guideCtx);
+    // Compounding loop: read what prior runs learned about this product/ICP so
+    // the onboarding flow builds on accumulated knowledge. Graceful on first run.
+    let learned = "";
+    try {
+      const k = await ctx.runAction(internal.knowledge.queryContext, {
+        query: base.valueProp || base.productName,
+        entityType: "company",
+        entityKey: keyFor({ company: base.productName, input: base.productName }),
+        maxBytes: 8192,
+      });
+      if (k.available) {
+        learned = `\n\nWHAT WE'VE LEARNED (prior runs):\n${k.context}`;
+      }
+    } catch {
+      learned = "";
+    }
+
+    const steps = await generateSteps(guideCtx, learned);
     const tourSteps: TourStepRow[] = steps.map((s) => ({
       order: s.order,
       target: s.target,
@@ -187,14 +205,17 @@ export const run = internalAction({
 // Generation core: OpenAI when available, deterministic fallback otherwise.
 // Always returns a viable, normalized OnboardingStep[] — never throws.
 // ----------------------------------------------------------------------------
-async function generateSteps(guideCtx: GuideContext): Promise<OnboardingStep[]> {
+async function generateSteps(
+  guideCtx: GuideContext,
+  learned = "",
+): Promise<OnboardingStep[]> {
   const fallback = fallbackFlowSteps(guideCtx);
   if (!process.env.OPENAI_API_KEY) return fallback;
 
   try {
     const { system, user, schemaHint } = buildGuidePrompts(guideCtx);
     const raw = await chatJSON<{ steps?: unknown }>({
-      system,
+      system: system + learned,
       user,
       schemaHint,
       temperature: 0.5,

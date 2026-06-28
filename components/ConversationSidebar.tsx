@@ -12,6 +12,7 @@ import {
   listConversationsRef,
 } from "./chatApi";
 import type { ConversationDoc } from "./types";
+import ThemeToggle from "./ThemeToggle";
 
 // ============================================================================
 // ConversationSidebar — the rail of past conversations + "New chat".
@@ -46,19 +47,19 @@ function BrainIcon({ className }: { className?: string }) {
 function intentDot(intent?: string): string {
   switch (intent) {
     case "discovery":
-      return "bg-sky-400";
+      return "bg-block-mint";
     case "outbound":
-      return "bg-violet-400";
+      return "bg-block-lilac";
     case "outreach":
-      return "bg-accent";
+      return "bg-block-coral";
     case "competitor":
-      return "bg-amber-400";
+      return "bg-block-cream";
     case "content":
-      return "bg-pink-400";
+      return "bg-block-pink";
     case "analyze":
-      return "bg-good";
+      return "bg-success";
     default:
-      return "bg-white/30";
+      return "bg-ink/30";
   }
 }
 
@@ -108,10 +109,10 @@ export default function ConversationSidebar({
 
   if (collapsed) {
     return (
-      <div className="flex h-full w-12 flex-col items-center gap-3 border-r border-line bg-ink/60 py-4">
+      <div className="flex h-full w-12 flex-col items-center gap-3 border-r border-hairline bg-surface-soft py-4">
         <button
           onClick={onToggle}
-          className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-white/50 transition-colors hover:border-accent/40 hover:text-white"
+          className="flex h-8 w-8 items-center justify-center rounded-full border border-hairline text-ink transition-colors hover:bg-canvas"
           aria-label="Expand sidebar"
         >
           <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
@@ -120,48 +121,49 @@ export default function ConversationSidebar({
         </button>
         <button
           onClick={onNew}
-          className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent text-ink transition-transform hover:scale-105"
+          className="flex h-8 w-8 items-center justify-center rounded-full bg-canvas text-ink border border-hairline transition-transform hover:scale-105"
           aria-label="New chat"
         >
           <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
             <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
           </svg>
         </button>
-        <div className="mt-auto">
+        <div className="mt-auto flex flex-col items-center gap-3">
           <button
             onClick={onOpenBrain}
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-lg border transition-colors",
+              "flex h-8 w-8 items-center justify-center rounded-full transition-colors",
               brainActive
-                ? "border-accent/40 bg-accent/10 text-accent"
-                : "border-line text-white/50 hover:border-accent/40 hover:text-white",
+                ? "bg-primary text-on-primary"
+                : "border border-hairline text-ink hover:bg-canvas",
             )}
             aria-label="Open the brain"
             title="The brain — compounding knowledge"
           >
             <BrainIcon className="h-4 w-4" />
           </button>
+          <ThemeToggle />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex h-full w-64 flex-col border-r border-line bg-ink/60">
+    <div className="flex h-full w-64 flex-col border-r border-hairline bg-surface-soft">
       {/* brand + collapse */}
       <div className="flex items-center justify-between px-3.5 py-3.5">
         <div className="flex items-center gap-2">
-          <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-line bg-panel">
-            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 text-accent">
+          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-canvas text-ink">
+            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
               <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.8" />
               <path d="m20 20-4.6-4.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
             </svg>
           </span>
-          <span className="text-[14px] font-semibold tracking-tight">INTERCEPT</span>
+          <span className="text-[16px] font-fig-card tracking-tight text-ink">INTERCEPT</span>
         </div>
         <button
           onClick={onToggle}
-          className="flex h-7 w-7 items-center justify-center rounded-lg text-white/40 transition-colors hover:bg-white/5 hover:text-white"
+          className="flex h-7 w-7 items-center justify-center rounded-full text-ink transition-colors hover:bg-canvas"
           aria-label="Collapse sidebar"
         >
           <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
@@ -170,12 +172,12 @@ export default function ConversationSidebar({
         </button>
       </div>
 
-      {/* new chat */}
+      {/* new chat — secondary pill (Send stays the chat's one primary) */}
       <div className="px-3 pb-2">
         <button
           onClick={onNew}
           disabled={busy}
-          className="flex w-full items-center justify-center gap-2 rounded-xl border border-line bg-panel/70 px-3 py-2 text-[13px] font-medium text-white/80 transition-all hover:border-accent/40 hover:text-white disabled:opacity-50"
+          className="flex w-full items-center justify-center gap-2 rounded-pill border border-hairline bg-canvas px-3 py-2 text-[13px] font-fig-link text-ink transition-all hover:bg-surface-soft disabled:opacity-50"
         >
           <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
             <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
@@ -189,11 +191,11 @@ export default function ConversationSidebar({
         {conversations === undefined ? (
           <div className="space-y-1.5 px-1 py-1">
             {[0, 1, 2].map((i) => (
-              <div key={i} className="h-11 animate-pulse rounded-lg bg-white/5" />
+              <div key={i} className="h-11 animate-pulse rounded-md bg-surface-soft" />
             ))}
           </div>
         ) : conversations.length === 0 ? (
-          <p className="px-2 py-6 text-center text-[11.5px] leading-relaxed text-white/30">
+          <p className="px-2 py-6 text-center text-[11.5px] leading-relaxed text-ink">
             No conversations yet. Start one above.
           </p>
         ) : (
@@ -205,16 +207,16 @@ export default function ConversationSidebar({
                   <button
                     onClick={() => onSelect(c._id)}
                     className={cn(
-                      "group flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors",
-                      active ? "bg-white/8" : "hover:bg-white/5",
+                      "group flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition-colors",
+                      active ? "bg-canvas" : "hover:bg-canvas",
                     )}
                   >
                     <span className={cn("mt-0.5 h-1.5 w-1.5 shrink-0 rounded-full", intentDot(c.lastIntent))} />
                     <span className="min-w-0 flex-1">
-                      <span className={cn("block truncate text-[12.5px]", active ? "text-white" : "text-white/70")}>
+                      <span className={cn("block truncate text-[12.5px] text-ink", active && "font-fig-headline")}>
                         {c.title || "Untitled"}
                       </span>
-                      <span className="mt-0.5 flex items-center gap-1.5 text-[10px] text-white/30">
+                      <span className="caption mt-1 flex items-center gap-1.5 text-ink">
                         <span>{intentLabel(c.lastIntent)}</span>
                         <span>·</span>
                         <span>{relativeTime(c.lastMessageAt)}</span>
@@ -224,7 +226,7 @@ export default function ConversationSidebar({
                       onClick={(e) => onDelete(e, c._id)}
                       role="button"
                       tabIndex={-1}
-                      className="shrink-0 rounded p-1 text-white/0 transition-colors group-hover:text-white/30 hover:!text-red-300"
+                      className="shrink-0 rounded p-1 text-transparent transition-colors group-hover:text-ink/40 hover:!text-red-500"
                       aria-label="Delete conversation"
                     >
                       <svg viewBox="0 0 24 24" fill="none" className="h-3.5 w-3.5">
@@ -240,28 +242,29 @@ export default function ConversationSidebar({
       </div>
 
       {/* the brain — the compounding-knowledge board, always one click away */}
-      <div className="border-t border-line px-3 py-2">
+      <div className="border-t border-hairline px-3 py-2">
         <button
           onClick={onOpenBrain}
           className={cn(
-            "flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[12.5px] transition-colors",
+            "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-[12.5px] transition-colors",
             brainActive
-              ? "bg-accent/10 text-accent"
-              : "text-white/70 hover:bg-white/5 hover:text-white",
+              ? "bg-block-lilac text-ink"
+              : "text-ink hover:bg-canvas",
           )}
         >
           <BrainIcon className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1">
-            <span className="block font-medium">The brain</span>
-            <span className="block text-[10px] text-white/30">
+            <span className="block font-fig-headline">The brain</span>
+            <span className="block text-[10px] text-ink">
               Compounding knowledge — grows every run
             </span>
           </span>
         </button>
       </div>
 
-      <div className="border-t border-line px-3.5 py-2.5 text-[10px] text-white/25">
-        Live intent radar · 24/7 outbound
+      <div className="flex items-center justify-between border-t border-hairline px-3.5 py-2.5">
+        <span className="caption text-ink">Live intent radar · 24/7</span>
+        <ThemeToggle />
       </div>
     </div>
   );

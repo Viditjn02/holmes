@@ -12,70 +12,46 @@ import type { IntentLabel } from "@/lib/contract";
 
 interface IntentStyle {
   label: string;
-  /** Tailwind classes for the score ring + badge accent. */
-  ring: string; // hex used in the conic-gradient
-  track: string; // hex for the unfilled track
-  text: string;
+  /** Pastel block chip classes for the intent badge. */
   chip: string;
-  glow: string;
   pulse: boolean;
 }
 
 const INTENT_STYLES: Record<IntentLabel, IntentStyle> = {
   ready_to_buy: {
     label: "Ready to buy",
-    ring: "#34d399",
-    track: "rgba(52,211,153,0.15)",
-    text: "text-good",
-    chip: "bg-good/15 text-good ring-1 ring-good/30",
-    glow: "shadow-[0_0_40px_-12px_rgba(52,211,153,0.45)]",
+    chip: "bg-block-mint text-ink",
     pulse: true,
   },
   frustrated: {
     label: "Frustrated",
-    ring: "#ff6a2b",
-    track: "rgba(255,106,43,0.15)",
-    text: "text-accent",
-    chip: "bg-accent/15 text-accent ring-1 ring-accent/30",
-    glow: "shadow-[0_0_40px_-12px_rgba(255,106,43,0.45)]",
+    chip: "bg-block-coral text-ink",
     pulse: true,
   },
   comparing: {
     label: "Comparing",
-    ring: "#fbbf24",
-    track: "rgba(251,191,36,0.15)",
-    text: "text-amber-400",
-    chip: "bg-amber-400/15 text-amber-400 ring-1 ring-amber-400/30",
-    glow: "shadow-[0_0_36px_-14px_rgba(251,191,36,0.4)]",
+    chip: "bg-block-cream text-ink",
     pulse: false,
   },
   browsing: {
     label: "Browsing",
-    ring: "#60a5fa",
-    track: "rgba(96,165,250,0.15)",
-    text: "text-sky-400",
-    chip: "bg-sky-400/15 text-sky-400 ring-1 ring-sky-400/30",
-    glow: "",
+    chip: "bg-block-lilac text-ink",
     pulse: false,
   },
 };
 
 const FALLBACK_INTENT: IntentStyle = {
   label: "Signal",
-  ring: "#8b8b94",
-  track: "rgba(139,139,148,0.15)",
-  text: "text-zinc-300",
-  chip: "bg-zinc-500/15 text-zinc-300 ring-1 ring-zinc-500/30",
-  glow: "",
+  chip: "bg-surface-soft text-ink border border-hairline",
   pulse: false,
 };
 
-const PLATFORM_META: Record<string, { label: string; symbol: string; accent: string }> = {
-  reddit: { label: "Reddit", symbol: "r/", accent: "text-orange-400" },
-  hackernews: { label: "Hacker News", symbol: "Y", accent: "text-orange-300" },
-  forum: { label: "Forum", symbol: "#", accent: "text-violet-300" },
-  discord: { label: "Discord", symbol: "@", accent: "text-indigo-300" },
-  twitter: { label: "X", symbol: "x", accent: "text-sky-300" },
+const PLATFORM_META: Record<string, { label: string; symbol: string }> = {
+  reddit: { label: "Reddit", symbol: "r/" },
+  hackernews: { label: "Hacker News", symbol: "Y" },
+  forum: { label: "Forum", symbol: "#" },
+  discord: { label: "Discord", symbol: "@" },
+  twitter: { label: "X", symbol: "x" },
 };
 
 function intentStyle(label: string): IntentStyle {
@@ -87,7 +63,6 @@ function platformMeta(platform: string) {
     PLATFORM_META[platform.toLowerCase()] ?? {
       label: platform,
       symbol: "#",
-      accent: "text-zinc-300",
     }
   );
 }
@@ -112,19 +87,19 @@ function ScoreRing({ score, style }: ScoreRingProps) {
     <div
       className="relative grid h-16 w-16 shrink-0 place-items-center rounded-full"
       style={{
-        background: `conic-gradient(${style.ring} ${deg}deg, ${style.track} ${deg}deg)`,
+        background: `conic-gradient(rgb(var(--ink)) ${deg}deg, rgb(var(--ink) / 0.1) ${deg}deg)`,
       }}
       aria-label={`Intent score ${clamped} of 100`}
     >
-      <div className="grid h-[52px] w-[52px] place-items-center rounded-full bg-panel">
-        <span className={`text-xl font-bold tabular-nums leading-none ${style.text}`}>
+      <div className="grid h-[52px] w-[52px] place-items-center rounded-full bg-canvas">
+        <span className="text-xl font-fig-card tabular-nums leading-none text-ink">
           {clamped}
         </span>
       </div>
       {style.pulse && (
         <span
-          className="pointer-events-none absolute inset-0 animate-ping rounded-full opacity-30"
-          style={{ boxShadow: `0 0 0 2px ${style.ring}` }}
+          className="pointer-events-none absolute inset-0 animate-ping rounded-full opacity-20"
+          style={{ boxShadow: "0 0 0 2px rgb(var(--ink))" }}
         />
       )}
     </div>
@@ -138,10 +113,10 @@ interface ThreadCardProps {
 }
 
 const DRAFT_BADGE: Record<string, { label: string; cls: string }> = {
-  awaiting_approval: { label: "Reply ready · review", cls: "bg-accent/15 text-accent ring-1 ring-accent/30" },
-  approved: { label: "Approved", cls: "bg-good/15 text-good ring-1 ring-good/30" },
-  rejected: { label: "Rejected", cls: "bg-zinc-500/15 text-zinc-400 ring-1 ring-zinc-500/30" },
-  posted: { label: "Posted", cls: "bg-good/20 text-good ring-1 ring-good/40" },
+  awaiting_approval: { label: "Reply ready · review", cls: "bg-block-cream text-ink" },
+  approved: { label: "Approved", cls: "bg-block-mint text-ink" },
+  rejected: { label: "Rejected", cls: "bg-surface-soft text-ink/60 border border-hairline" },
+  posted: { label: "Posted", cls: "bg-block-mint text-ink" },
 };
 
 export default function ThreadCard({ thread, draft, onReviewDraft }: ThreadCardProps) {
@@ -151,24 +126,22 @@ export default function ThreadCard({ thread, draft, onReviewDraft }: ThreadCardP
 
   return (
     <article
-      className={`group relative flex flex-col gap-4 rounded-2xl border border-line bg-panel/80 p-5 backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-line/80 ${style.glow}`}
+      className="group relative flex flex-col gap-4 rounded-lg border border-hairline bg-canvas p-5 transition-colors duration-200 hover:border-ink/20"
     >
       {/* Header: platform + intent chip */}
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs font-medium text-zinc-400">
+      <div className="flex items-center gap-2 text-xs">
+        <div className="flex min-w-0 flex-1 items-center gap-2 text-ink/60">
           <span
-            className={`grid h-6 w-6 place-items-center rounded-md bg-ink font-bold ${platform.accent}`}
+            className="grid h-6 w-6 place-items-center rounded-md bg-surface-soft font-fig-card text-ink"
             aria-hidden
           >
             {platform.symbol}
           </span>
-          <span className="text-zinc-300">{platform.label}</span>
-          <span className="text-zinc-600">·</span>
-          <span className="truncate text-zinc-500">{hostOf(thread.url)}</span>
+          <span className="text-ink">{platform.label}</span>
+          <span className="text-ink/30">·</span>
+          <span className="truncate text-ink/50">{hostOf(thread.url)}</span>
         </div>
-        <span
-          className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${style.chip}`}
-        >
+        <span className={`caption whitespace-nowrap rounded-full px-2.5 py-1 ${style.chip}`}>
           {style.label}
         </span>
       </div>
@@ -181,28 +154,28 @@ export default function ThreadCard({ thread, draft, onReviewDraft }: ThreadCardP
             href={thread.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="block text-[15px] font-semibold leading-snug text-zinc-50 decoration-accent/60 underline-offset-4 transition-colors hover:text-white hover:underline"
+            className="block text-[15px] font-fig-headline leading-snug text-ink decoration-ink/40 underline-offset-4 transition-colors hover:underline"
           >
             {thread.title}
           </a>
-          <p className="mt-1.5 line-clamp-3 text-sm leading-relaxed text-zinc-400">
+          <p className="mt-1.5 line-clamp-3 text-sm leading-relaxed text-ink/60">
             “{thread.snippet}”
           </p>
           {thread.author && (
-            <p className="mt-2 text-xs text-zinc-500">
-              asked by <span className="text-zinc-300">{thread.author}</span>
+            <p className="mt-2 text-xs text-ink/50">
+              asked by <span className="text-ink">{thread.author}</span>
             </p>
           )}
         </div>
       </div>
 
       {/* Footer: the clickable moat link + draft gate */}
-      <div className="mt-1 flex items-center justify-between gap-3 border-t border-line/70 pt-3">
+      <div className="mt-1 flex items-center justify-between gap-3 border-t border-hairline pt-3">
         <a
           href={thread.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-ink px-3 py-2 text-sm font-medium text-zinc-200 ring-1 ring-line transition-colors hover:bg-line/40 hover:text-white"
+          className="inline-flex items-center gap-1.5 rounded-pill border border-hairline bg-canvas px-4 py-2 text-sm font-fig-link text-ink transition-colors hover:bg-surface-soft"
         >
           Open live thread
           <svg
@@ -225,7 +198,7 @@ export default function ThreadCard({ thread, draft, onReviewDraft }: ThreadCardP
           <button
             type="button"
             onClick={() => onReviewDraft?.(draft)}
-            className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold transition-transform hover:scale-[1.02] ${draftBadge.cls}`}
+            className={`inline-flex items-center gap-1.5 rounded-pill px-4 py-2 text-xs font-fig-link transition-opacity hover:opacity-90 ${draftBadge.cls}`}
           >
             {draft.status === "awaiting_approval" && (
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />

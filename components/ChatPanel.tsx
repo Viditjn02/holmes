@@ -124,7 +124,7 @@ export default function ChatPanel({
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-ink/40">
+    <div className="flex h-full min-h-0 flex-col bg-canvas text-ink">
       {/* messages */}
       <div ref={scrollRef} className="col-scroll min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-2xl flex-col gap-5 px-4 py-6">
@@ -144,9 +144,9 @@ export default function ChatPanel({
       </div>
 
       {/* composer */}
-      <div className="border-t border-line bg-ink/60 px-4 py-3 backdrop-blur">
+      <div className="border-t border-hairline bg-canvas px-4 py-3">
         <form onSubmit={onSubmit} className="mx-auto w-full max-w-2xl">
-          <div className="flex items-end gap-2 rounded-2xl border border-line bg-panel/80 p-2 shadow-xl shadow-black/30 transition-colors focus-within:border-accent/50">
+          <div className="text-input flex items-end gap-2 !p-2">
             <textarea
               ref={textareaRef}
               value={value}
@@ -154,17 +154,17 @@ export default function ChatPanel({
               onKeyDown={onKeyDown}
               rows={1}
               placeholder="Paste a company, a competitor, an idea — or just ask…"
-              className="max-h-[200px] flex-1 resize-none bg-transparent px-2.5 py-2 text-[14px] leading-relaxed text-white placeholder:text-white/30 focus:outline-none"
+              className="max-h-[200px] flex-1 resize-none bg-transparent px-2.5 py-2 text-[14px] leading-relaxed text-ink placeholder:text-ink/35 focus:outline-none"
               aria-label="Message INTERCEPT"
             />
             <button
               type="submit"
               disabled={!value.trim() || sending}
-              className="mb-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-accent text-ink transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+              className="mb-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-on-primary transition-all hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
               aria-label="Send"
             >
               {sending ? (
-                <span className="h-4 w-4 animate-spin-slow rounded-full border-2 border-ink/30 border-t-ink" />
+                <span className="h-4 w-4 animate-spin-slow rounded-full border-2 border-on-primary/30 border-t-on-primary" />
               ) : (
                 <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4">
                   <path d="M5 12h14m0 0-5-5m5 5-5 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
@@ -172,8 +172,8 @@ export default function ChatPanel({
               )}
             </button>
           </div>
-          {error && <p className="mt-2 px-1 text-xs text-red-300">{error}</p>}
-          <p className="mt-1.5 px-1 text-[10.5px] text-white/25">
+          {error && <p className="mt-2 px-1 text-body-sm text-red-500">{error}</p>}
+          <p className="caption mt-2 px-1 text-ink/60">
             INTERCEPT routes every message — discovery · outbound · outreach · content · competitor intel.
           </p>
         </form>
@@ -185,16 +185,16 @@ export default function ChatPanel({
 function Welcome({ onPick }: { onPick: (text: string) => void }) {
   return (
     <div className="flex flex-1 flex-col items-center justify-center py-10 text-center animate-fade-up">
-      <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-accent/30 bg-accent/10 text-accent">
+      <span className="flex h-12 w-12 items-center justify-center rounded-md bg-ink text-canvas">
         <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6">
           <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.8" />
           <path d="m20 20-4.6-4.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
         </svg>
       </span>
-      <h1 className="mt-5 text-balance text-2xl font-semibold tracking-tight">
+      <h1 className="mt-5 text-balance text-headline text-ink">
         What should we go after?
       </h1>
-      <p className="mt-2 max-w-md text-[14px] leading-relaxed text-white/50">
+      <p className="mt-2 max-w-md text-body-sm text-ink">
         Paste a company, a competitor, or an idea. I&apos;ll decide what to do —
         find live buyer threads, source decision-makers, draft outreach, scout
         competitor ads, or make the creative — and work it live beside us.
@@ -205,12 +205,12 @@ function Welcome({ onPick }: { onPick: (text: string) => void }) {
             key={ex.text}
             type="button"
             onClick={() => onPick(ex.text)}
-            className="group rounded-xl border border-line bg-panel/60 p-3 text-left transition-all hover:-translate-y-0.5 hover:border-accent/40"
+            className="group rounded-md border border-hairline bg-surface-soft p-3 text-left transition-colors hover:bg-canvas"
           >
-            <span className="block text-[12.5px] font-medium text-white/80 group-hover:text-white">
+            <span className="block text-body-sm font-fig-headline text-ink">
               {ex.label}
             </span>
-            <span className="mt-0.5 block truncate text-[11px] text-white/35">
+            <span className="mt-0.5 block truncate text-[12px] font-fig-body text-ink">
               {ex.text}
             </span>
           </button>

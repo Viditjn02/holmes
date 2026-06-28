@@ -24,26 +24,28 @@ interface AdGalleryProps {
   onFocusRun?: (runId: Id<"runs"> | undefined, intent?: string) => void;
 }
 
-const NETWORK_META: Record<string, { label: string; symbol: string; accent: string }> = {
-  meta: { label: "Meta", symbol: "f", accent: "text-sky-400" },
-  facebook: { label: "Facebook", symbol: "f", accent: "text-sky-400" },
-  instagram: { label: "Instagram", symbol: "◎", accent: "text-pink-400" },
-  audience_network: { label: "Audience Network", symbol: "▦", accent: "text-violet-300" },
-  messenger: { label: "Messenger", symbol: "✦", accent: "text-sky-300" },
-  tiktok: { label: "TikTok", symbol: "♪", accent: "text-fuchsia-300" },
+// Network identity — labels + glyphs. Glyphs sit on a neutral surface tile and
+// read in ink (palette migration: no per-network hues).
+const NETWORK_META: Record<string, { label: string; symbol: string }> = {
+  meta: { label: "Meta", symbol: "f" },
+  facebook: { label: "Facebook", symbol: "f" },
+  instagram: { label: "Instagram", symbol: "◎" },
+  audience_network: { label: "Audience Network", symbol: "▦" },
+  messenger: { label: "Messenger", symbol: "✦" },
+  tiktok: { label: "TikTok", symbol: "♪" },
 };
 
 function networkMeta(ad: Doc<"ads">) {
   const key = (ad.network ?? ad.platform ?? "").toLowerCase();
-  return NETWORK_META[key] ?? { label: ad.platform || "Ad", symbol: "#", accent: "text-zinc-300" };
+  return NETWORK_META[key] ?? { label: ad.platform || "Ad", symbol: "#" };
 }
 
-/** Longer-running ads read as stronger signal — tier the badge accordingly. */
+/** Longer-running ads read as stronger signal — tier the block tint accordingly. */
 function longevityChip(days: number | undefined, active: boolean): string {
-  if (!active) return "bg-zinc-500/15 text-zinc-400 ring-1 ring-zinc-500/30";
-  if ((days ?? 0) >= 30) return "bg-good/15 text-good ring-1 ring-good/30";
-  if ((days ?? 0) >= 7) return "bg-accent/15 text-accent ring-1 ring-accent/30";
-  return "bg-amber-400/15 text-amber-400 ring-1 ring-amber-400/30";
+  if (!active) return "bg-surface-soft text-ink";
+  if ((days ?? 0) >= 30) return "bg-block-mint text-ink";
+  if ((days ?? 0) >= 7) return "bg-block-lime text-ink";
+  return "bg-block-cream text-ink";
 }
 
 function longevityLabel(days: number | undefined, active: boolean): string {
@@ -68,13 +70,13 @@ function ScoreBars({ scores }: { scores: NonNullable<Doc<"ads">["scores"]> }) {
         const val = Math.max(0, Math.min(100, scores[axis.key] ?? 0));
         return (
           <div key={axis.key} className="flex flex-col items-center gap-1">
-            <div className="flex h-10 w-full items-end overflow-hidden rounded bg-white/5">
+            <div className="flex h-10 w-full items-end overflow-hidden rounded-sm bg-surface-soft">
               <div
-                className="w-full rounded-t bg-gradient-to-t from-accent to-good"
+                className="w-full rounded-t-sm bg-ink"
                 style={{ height: `${Math.max(val, 4)}%` }}
               />
             </div>
-            <span className="text-[8.5px] uppercase tracking-wide text-zinc-500">{axis.label}</span>
+            <span className="caption text-ink/60 text-[8.5px]">{axis.label}</span>
           </div>
         );
       })}
@@ -111,25 +113,26 @@ function AdCard({ ad, rank, onFocusRun }: AdCardProps) {
 
   return (
     <article
-      className={`group relative flex flex-col gap-3 rounded-2xl border border-line bg-panel/80 p-4 backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-line/80 ${
-        isTop ? "shadow-[0_0_40px_-12px_rgba(52,211,153,0.4)]" : ""
+      className={`group relative flex flex-col gap-3 rounded-lg border bg-canvas p-4 transition-colors ${
+        isTop ? "border-ink" : "border-hairline"
       }`}
     >
       {scaling && (
-        <span className="absolute -right-1 -top-1 rounded-bl-lg rounded-tr-2xl bg-good/20 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-good ring-1 ring-good/30">
+        <span className="caption absolute -right-1 -top-1 inline-flex items-center gap-1 rounded-bl-lg rounded-tr-lg bg-block-mint px-2 py-1 text-ink">
+          <span className="h-1.5 w-1.5 rounded-full bg-success" aria-hidden />
           Scaling
         </span>
       )}
 
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2 text-xs font-medium text-zinc-400">
-          <span className={`grid h-6 w-6 place-items-center rounded-md bg-ink font-bold ${net.accent}`} aria-hidden>
+        <div className="flex items-center gap-2">
+          <span className="grid h-6 w-6 place-items-center rounded-md bg-surface-soft font-fig-card text-ink" aria-hidden>
             {net.symbol}
           </span>
-          <span className="truncate text-zinc-300">{ad.advertiser}</span>
+          <span className="truncate text-body-sm text-ink">{ad.advertiser}</span>
         </div>
         <span
-          className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide ${longevityChip(
+          className={`caption whitespace-nowrap rounded-pill px-2.5 py-1 ${longevityChip(
             ad.daysRunning,
             active,
           )}`}
@@ -144,7 +147,7 @@ function AdCard({ ad, rank, onFocusRun }: AdCardProps) {
           src={media}
           alt={`${ad.advertiser} ad creative`}
           loading="lazy"
-          className="h-40 w-full rounded-xl object-cover ring-1 ring-line"
+          className="h-40 w-full rounded-md object-cover ring-1 ring-hairline"
         />
       )}
 
@@ -152,8 +155,8 @@ function AdCard({ ad, rank, onFocusRun }: AdCardProps) {
         <div className="flex items-center gap-3">
           {ad.perfScore !== undefined && (
             <div className="flex flex-col items-center">
-              <span className="text-lg font-bold tabular-nums text-good">{Math.round(ad.perfScore)}</span>
-              <span className="text-[8.5px] uppercase tracking-wide text-zinc-500">Score</span>
+              <span className="nums text-card-title text-success">{Math.round(ad.perfScore)}</span>
+              <span className="caption text-ink/60 text-[8.5px]">Score</span>
             </div>
           )}
           {ad.scores && (
@@ -164,24 +167,25 @@ function AdCard({ ad, rank, onFocusRun }: AdCardProps) {
         </div>
       )}
 
-      {ad.headline && <p className="text-sm font-semibold leading-snug text-zinc-100">{ad.headline}</p>}
+      {ad.headline && <p className="text-body-sm font-fig-headline leading-snug text-ink">{ad.headline}</p>}
 
-      <p className="line-clamp-4 text-sm leading-relaxed text-zinc-300">
-        {ad.text ? `“${ad.text}”` : <span className="text-zinc-600">No ad copy captured.</span>}
+      <p className="line-clamp-4 text-body-sm text-ink/80">
+        {ad.text ? `“${ad.text}”` : <span className="text-ink/40">No ad copy captured.</span>}
       </p>
 
       {ad.winningAngle && (
-        <p className="rounded-lg bg-accent/5 px-2.5 py-1.5 text-[11px] leading-snug text-accent ring-1 ring-accent/15">
-          Winning angle: {ad.winningAngle}
+        <p className="rounded-md bg-block-lime px-2.5 py-1.5 text-body-sm leading-snug text-ink">
+          <span className="eyebrow mr-1 text-[11px]">Winning angle</span>
+          {ad.winningAngle}
         </p>
       )}
 
-      <div className="mt-1 flex items-center justify-between gap-2 border-t border-line/70 pt-3 text-xs text-zinc-500">
+      <div className="mt-1 flex items-center justify-between gap-2 border-t border-hairline pt-3">
         <a
           href={ad.url}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 rounded-lg bg-ink px-3 py-1.5 font-medium text-zinc-200 ring-1 ring-line transition-colors hover:bg-line/40 hover:text-white"
+          className="inline-flex items-center gap-1.5 rounded-pill border border-hairline bg-canvas px-3 py-1.5 text-body-sm font-fig-link text-ink transition-colors hover:bg-surface-soft"
         >
           View ad
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -192,7 +196,7 @@ function AdCard({ ad, rank, onFocusRun }: AdCardProps) {
         <button
           onClick={onGenerate}
           disabled={pending}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-accent/15 px-3 py-1.5 font-semibold text-accent ring-1 ring-accent/30 transition-colors hover:bg-accent/25 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 rounded-pill bg-primary px-3 py-1.5 text-body-sm font-fig-link text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
         >
           {pending ? "Generating…" : "Generate similar"}
         </button>
@@ -206,16 +210,16 @@ export default function AdGallery({ runId, onFocusRun }: AdGalleryProps) {
   const loading = ads === undefined;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-line bg-panel/80">
-      <header className="flex items-center justify-between border-b border-line px-5 py-4">
+    <section className="overflow-hidden rounded-lg border border-hairline bg-canvas">
+      <header className="flex items-center justify-between border-b border-hairline px-5 py-4">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-100">Ad intelligence · what&apos;s winning right now</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="text-headline text-ink">Ad intelligence · what&apos;s winning right now</h3>
+          <p className="text-body-sm text-ink/60">
             No API token — scanned live across Meta + TikTok, scored and ranked.
           </p>
         </div>
         {!loading && ads.length > 0 && (
-          <span className="rounded-full bg-accent/15 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-accent ring-1 ring-accent/30">
+          <span className="caption rounded-pill bg-surface-soft px-2.5 py-1 text-ink">
             {ads.length} scanned
           </span>
         )}
@@ -226,16 +230,16 @@ export default function AdGallery({ runId, onFocusRun }: AdGalleryProps) {
           <div className="grid place-items-center py-10">
             <div className="flex flex-col items-center gap-3 text-center">
               <div className="relative h-10 w-10">
-                <span className="absolute inset-0 animate-spin rounded-full border-2 border-line border-t-accent" />
-                <span className="absolute inset-2 rounded-full bg-accent/10" />
+                <span className="absolute inset-0 animate-spin rounded-full border-2 border-hairline border-t-ink" />
+                <span className="absolute inset-2 rounded-full bg-surface-soft" />
               </div>
-              <p className="text-sm text-zinc-400">Scanning the competitor&apos;s ad factory…</p>
+              <p className="text-body-sm text-ink/70">Scanning the competitor&apos;s ad factory…</p>
             </div>
           </div>
         ) : ads.length === 0 ? (
           <div className="grid place-items-center py-10 text-center">
-            <p className="text-sm text-zinc-400">No live competitor ads surfaced.</p>
-            <p className="mt-1 max-w-sm text-xs text-zinc-600">
+            <p className="text-body-sm text-ink/70">No live competitor ads surfaced.</p>
+            <p className="mt-1 max-w-sm text-body-sm text-ink/50">
               Nothing came back for this advertiser on the scanned networks. The rest of the brief is unaffected.
             </p>
           </div>

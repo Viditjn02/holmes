@@ -139,13 +139,13 @@ function CanvasLens({
   onView: (view: CanvasView) => void;
 }) {
   return (
-    <div className="flex items-center justify-end border-b border-line/60 px-5 py-2">
-      <div className="inline-flex rounded-lg border border-line bg-panel/60 p-0.5 text-[11px] font-medium">
+    <div className="flex items-center justify-end border-b border-hairline px-5 py-2">
+      <div className="inline-flex rounded-pill border border-hairline bg-canvas p-0.5 text-[11px] font-fig-link">
         <LensTab active={view === "run"} onClick={() => onView("run")}>
           Run
         </LensTab>
         <LensTab active={view === "brain"} onClick={() => onView("brain")}>
-          <span aria-hidden className="mr-1">🧠</span>Brain
+          Brain
         </LensTab>
       </div>
     </div>
@@ -165,8 +165,8 @@ function LensTab({
     <button
       onClick={onClick}
       className={cn(
-        "rounded-md px-2.5 py-1 transition-colors",
-        active ? "bg-accent/15 text-accent" : "text-white/50 hover:text-white",
+        "rounded-pill px-2.5 py-1 transition-colors",
+        active ? "bg-primary text-on-primary" : "text-ink hover:bg-surface-soft",
       )}
     >
       {children}
@@ -203,10 +203,10 @@ function CanvasForRun({
                   key={r.runId}
                   onClick={() => onFocusRun?.(r.runId, r.intent)}
                   className={cn(
-                    "rounded-lg border px-2.5 py-1 text-[11px] font-medium transition-colors",
+                    "rounded-pill px-2.5 py-1 text-[11px] font-fig-link transition-colors",
                     active
-                      ? "border-accent/40 bg-accent/10 text-accent"
-                      : "border-line bg-panel/60 text-white/55 hover:text-white",
+                      ? "bg-primary text-on-primary"
+                      : "border border-hairline bg-canvas text-ink hover:bg-surface-soft",
                   )}
                 >
                   {capabilityTitle(r.intent).split(" ")[0]}
@@ -216,7 +216,7 @@ function CanvasForRun({
             {focusedRunId && runs[runs.length - 1]?.runId !== focusedRunId && (
               <button
                 onClick={() => onFocusRun?.(undefined)}
-                className="ml-1 rounded-lg px-2.5 py-1 text-[11px] text-white/45 hover:text-white"
+                className="ml-1 rounded-full px-2.5 py-1 text-[11px] text-ink hover:bg-surface-soft"
               >
                 Jump to latest →
               </button>
@@ -227,25 +227,25 @@ function CanvasForRun({
         {/* capability header */}
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
-            <span className="rounded-full border border-accent/30 bg-accent/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-accent">
+            <span className="eyebrow rounded-pill bg-surface-soft px-3 py-1 text-[11px] text-ink">
               {capabilityTitle(intent)}
             </span>
-            {company && <span className="truncate text-[13px] text-white/55">{company}</span>}
+            {company && <span className="truncate text-[13px] text-ink">{company}</span>}
           </div>
           <CampaignControl runId={run.runId} intent={intent} />
         </div>
 
         {/* ICP / positioning strip */}
         {brief && (brief.icp || brief.positioning) && (
-          <div className="mb-4 grid gap-3 rounded-2xl border border-line bg-panel/60 p-4 sm:grid-cols-2">
+          <div className="mb-4 grid gap-3 rounded-lg bg-block-lime p-lg text-ink sm:grid-cols-2">
             <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">Ideal customer</p>
-              <p className="mt-1 text-[13px] leading-relaxed text-zinc-200">{brief.icp}</p>
+              <p className="eyebrow text-ink">Ideal customer</p>
+              <p className="mt-1 text-[15px] leading-relaxed text-ink">{brief.icp}</p>
             </div>
             {brief.positioning && (
-              <div className="sm:border-l sm:border-line sm:pl-4">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-accent">Positioning</p>
-                <p className="mt-1 text-[13px] leading-relaxed text-zinc-200">{brief.positioning}</p>
+              <div className="sm:border-l sm:border-ink/15 sm:pl-4">
+                <p className="eyebrow text-ink">Positioning</p>
+                <p className="mt-1 text-[15px] leading-relaxed text-ink">{brief.positioning}</p>
               </div>
             )}
           </div>
@@ -319,16 +319,16 @@ function CampaignControl({ runId, intent }: { runId: Id<"runs">; intent: Capabil
     <button
       onClick={toggle}
       className={cn(
-        "inline-flex items-center gap-2 rounded-xl border px-3 py-1.5 text-[12px] font-medium transition-colors",
+        "inline-flex items-center gap-2 rounded-pill px-3 py-1.5 text-[12px] font-fig-link transition-colors",
         active
-          ? "border-good/40 bg-good/10 text-good"
-          : "border-line bg-panel/60 text-white/60 hover:border-accent/40 hover:text-white",
+          ? "bg-block-mint text-ink"
+          : "bg-accent-magenta text-on-primary hover:opacity-90",
       )}
       title={active ? "24/7 watch is on — click to pause" : "Turn on the 24/7 watch"}
     >
-      <span className={cn("relative flex h-2 w-2")}>
-        {active && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-good/70" />}
-        <span className={cn("relative inline-flex h-2 w-2 rounded-full", active ? "bg-good" : "bg-white/30")} />
+      <span className={cn("relative flex h-2 w-2", active ? "text-success" : "text-on-primary")}>
+        {active && <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/70" />}
+        <span className={cn("relative inline-flex h-2 w-2 rounded-full bg-current")} />
       </span>
       {active ? "24/7 watch on" : "Start 24/7 watch"}
     </button>
@@ -344,25 +344,24 @@ function CanvasEmpty({ hasConversation }: { hasConversation: boolean }) {
   );
   return (
     <div className="relative grid h-full place-items-center overflow-hidden px-6">
-      <div className="grid-bg pointer-events-none absolute inset-0 -z-10 opacity-60" />
       <div className="w-full max-w-lg text-center animate-fade-up">
-        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl border border-line bg-panel">
-          <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6 text-accent">
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-soft text-ink">
+          <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6">
             <circle cx="10.5" cy="10.5" r="6.5" stroke="currentColor" strokeWidth="1.8" />
             <path d="m20 20-4.6-4.6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
           </svg>
         </span>
-        <h2 className="mt-4 text-lg font-semibold tracking-tight">The live canvas</h2>
-        <p className="mt-1.5 text-[13px] leading-relaxed text-white/45">
+        <h2 className="mt-4 text-headline text-ink">The live canvas</h2>
+        <p className="mt-1.5 text-[13px] leading-relaxed text-ink">
           {hasConversation
             ? "Send a message — the swarm spins up here, live."
             : "Whatever you ask, the work renders here as it happens."}
         </p>
         <div className="mt-6 grid gap-2 text-left sm:grid-cols-2">
           {caps.map((c) => (
-            <div key={c.intent} className="rounded-xl border border-line bg-panel/50 p-3">
-              <p className="text-[12.5px] font-semibold text-white/80">{c.title}</p>
-              <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-white/40">{c.description}</p>
+            <div key={c.intent} className="rounded-md bg-surface-soft p-3 text-ink">
+              <p className="text-[12.5px] font-fig-headline text-ink">{c.title}</p>
+              <p className="mt-0.5 line-clamp-2 text-[11px] leading-snug text-ink">{c.description}</p>
             </div>
           ))}
         </div>
