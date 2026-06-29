@@ -51,6 +51,20 @@ import { cn } from "@/lib/utils";
 // convex server module into the client bundle).
 const FALLBACK_TARGET = "nolongerjobless.com";
 
+/** Normalize a target to a stable host key — mirrors convex/runs.ts so the page
+ *  matches a run to the CURRENT target (not the global-latest run, which made
+ *  every company show the same data and ignored a target change). */
+function normalizeTarget(input: string | null | undefined): string {
+  return (input ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    .split("?")[0]
+    .trim();
+}
+
 type Surface = "dashboard" | "workspace";
 
 export default function Home() {
@@ -163,11 +177,16 @@ export default function Home() {
   const goToTrack = useCallback(
     (intent: Intent) => {
       if (!spawnsRun(intent)) return; // brain/chat never spawn a run
-      const latest = (runs ?? []).find((r) => r.intent === intent);
+      // Match the CURRENT target, not just the intent — otherwise every company
+      // shows the same global-latest run and changing the URL does nothing.
+      const tgt = normalizeTarget(targetUrl || FALLBACK_TARGET);
+      const latest = (runs ?? []).find(
+        (r) => r.intent === intent && normalizeTarget(r.input) === tgt,
+      );
       if (latest) openRun(latest._id, intent);
       else void fireTrack(intent);
     },
-    [runs, openRun, fireTrack],
+    [runs, openRun, fireTrack, targetUrl],
   );
 
   // ── CommandBar → existing chat router (send) ───────────────────────────────

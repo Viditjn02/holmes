@@ -155,6 +155,7 @@ export default function DashboardHome({
   onOpenTrack,
   onOpenRun,
   onOpenBrain,
+  targetUrl = "",
   children,
 }: DashboardHomeProps) {
   // Both reads are deployed in the generated api. (There is NO convex/dashboard.ts
@@ -167,8 +168,8 @@ export default function DashboardHome({
 
   // Derive the per-track stat cards from the run roll-up (grouped by intent).
   const stats = useMemo<TrackStat[]>(
-    () => deriveStats(TRACKS, runs ?? []),
-    [runs],
+    () => deriveStats(TRACKS, runs ?? [], targetUrl),
+    [runs, targetUrl],
   );
   const statByKey = useMemo(
     () => new Map(stats.map((s) => [s.key, s])),
@@ -522,14 +523,33 @@ function ActivityFeed({ runs }: { runs: Doc<"runs">[] | undefined }) {
 // ===========================================================================
 // Stat derivation
 // ===========================================================================
+/** Normalize a target to a stable host key — mirrors convex/runs.ts so the cards
+ *  match the CURRENT target (not the global-latest run, which made every company
+ *  show the same data and ignored a target change). */
+function normalizeTarget(input: string | null | undefined): string {
+  return (input ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0]
+    .split("?")[0]
+    .trim();
+}
+
 function deriveStats(
   tracks: readonly TrackMeta[],
   runs: readonly Doc<"runs">[],
+  targetUrl: string,
 ): TrackStat[] {
-  // Run roll-up grouped by intent.
+  // Run roll-up grouped by intent — SCOPED to the current target so each card
+  // reflects the company in the target chip and updates when you change it.
   const now = Date.now();
+  const target = normalizeTarget(targetUrl);
   return tracks.map((t) => {
-    const mine = runs.filter((r) => r.intent === t.key);
+    const mine = runs.filter(
+      (r) => r.intent === t.key && (!target || normalizeTarget(r.input) === target),
+    );
     const latest = mine[0]; // listRuns is newest-first
     return {
       key: t.key,
